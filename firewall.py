@@ -12,9 +12,7 @@ import socket
 class Firewall:
     def __init__(self, config, iface_int, iface_ext):
         self.iface_int = iface_int
-        self.iface_ext = iface_ext
-        self.rule_fields = ["verdict", "protocol", "extIP", "ext_port"]
-        self.protocols = ['icmp', 'other', 'tcp', 'udp']
+        self.iface_ext = [6, 17, 1]
 
         # TODO: Load the firewall rules (from rule_filename) here.
         self.rules = []
@@ -45,6 +43,7 @@ class Firewall:
             self.iface_int.send_ip_packet(pkt)
         else:
             self.iface_ext.send_ip_packet(pkt)
+    
     # TODO: You can add more methods as you want.
     def parse_pkt(self, pkt):
         pkt_IP_info = dict()
@@ -80,8 +79,8 @@ class Firewall:
         '''
         pkt_info = self.parse_pkt(pkt)
         rules_results = self.parse_rules(pkt_dir, pkt_info)
-        return rules_results
-
+        #return rules_results
+        return False
 
     def parse_rules(self, pkt_dir, pkt_info):
         '''
@@ -98,8 +97,7 @@ class Firewall:
             if len(rule) == 4 and pkt_info['p'].lower() in self.protocols: # not dns
                 verdict, protocol, rules_ext_ip, rules_ext_port = [r.lower() for r in rule.split()]
                 if protocol == 'icmp':
-                    #TODO: based on how thomas implemented the packet parse, go through and retrieve ports of packet
-                    # then check against valid port
+                    pkt_type = pkt_info['type']
                 else:
                     #TODO: same stuff, need to know how implemented
                 if is_valid_ip and is_valid_port:
