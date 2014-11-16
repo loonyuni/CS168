@@ -17,7 +17,7 @@ class Firewall:
         # TODO: Load the firewall rules (from rule_filename) here.
         self.rules = []
 
-        lines = [line.strip() for line in open(config['rules'])]
+        lines = [line.strip() for line in open(config['rule'])]
         for l in lines:
             if len(l) > 0 and l[0] != '%':
                 self.rules.append(l)
@@ -35,7 +35,7 @@ class Firewall:
     def handle_packet(self, pkt_dir, pkt):
         # TODO: Your main firewall code will be here.
         
-        if packet_valid(pkt_dir, pkt):
+        if self.packet_valid(pkt_dir, pkt):
 
             if pkt_dir == PKT_DIR_INCOMING:
                 self.iface_int.send(pkt)
@@ -44,6 +44,8 @@ class Firewall:
 
     # TODO: You can add more methods as you want.
     def parse_pkt(self, packet):
+        print packet
+        print type(packet)
         pkt_info = dict()
         # IPv4 
         header_valid = struct.unpack('B', packet[0])[0]
@@ -66,5 +68,6 @@ class Firewall:
         return pkt_info
 
     def packet_valid(self, pkt_dir, pkt):
-        
+       pkt_info = self.parse_pkt(pkt)
+       print pkt_info
 # TODO: You may want to add more classes/functions as well.
