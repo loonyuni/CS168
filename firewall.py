@@ -34,7 +34,7 @@ class Firewall:
     # @pkt: the actual data of the IPv4 packet (including IP header)
     def handle_packet(self, pkt_dir, pkt):
         # TODO: Your main firewall code will be here.
-
+        ip_info, transport_info = self.parse_pkt(pkt)
         if ip_info["protocol"][1] == 17 and transport_info["dst"][1] == 53:
             print transport_info["dst"][1]
 
@@ -98,8 +98,8 @@ class Firewall:
         against parsed rules and returns boolean if packet can
         be passed or not
         '''
-        pkt_info = self.parse_pkt(pkt)
-        rules_results = self.parse_rules(pkt_dir, pkt_IP_info, pkt_transport_info)
+        pkt_IP_info, pkt_transport_info = self.parse_pkt(pkt)
+        # rules_results = self.parse_rules(pkt_dir, pkt_IP_info, pkt_transport_info)
         #return rules_results
         return False
 
@@ -128,7 +128,8 @@ class Firewall:
                     else:
                         can_send = False
             elif pkt_IP_info['protocol'] == 'dns': #dns
-                
+                #TODO: this
+                pass    
 
         return can_send
 
@@ -139,7 +140,7 @@ class Firewall:
             min_p, max_p = rules_port.split('-')
             min_p = int(min_p)
             max_p = int(max_p)
-            return pkt_port >= min_p or pkt_port <= max_p:
+            return pkt_port >= min_p or pkt_port <= max_p
         return False
 
     def is_match_ip(self, rules_ext_ip, pkt_ext_ip):
