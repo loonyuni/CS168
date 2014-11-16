@@ -17,7 +17,7 @@ class Firewall:
         # TODO: Load the firewall rules (from rule_filename) here.
         self.rules = []
 
-        lines = [line.strip() for line in open(config['rules'])]
+        lines = [line.strip() for line in open(config['rule'])]
         for l in lines:
             if len(l) > 0 and l[0] != '%':
                 self.rules.append(l)
@@ -39,10 +39,10 @@ class Firewall:
             print transport_info["dst"][1]
 
         if self.packet_valid(pkt_dir, pkt):
-        if pkt_dir == PKT_DIR_INCOMING:
-            self.iface_int.send_ip_packet(pkt)
-        else:
-            self.iface_ext.send_ip_packet(pkt)
+            if pkt_dir == PKT_DIR_INCOMING:
+                self.iface_int.send_ip_packet(pkt)
+            else:
+                self.iface_ext.send_ip_packet(pkt)
     
     # TODO: You can add more methods as you want.
     def parse_pkt(self, pkt):
@@ -51,17 +51,19 @@ class Firewall:
         pkt_IP_info["ihl"] = ( format(int(struct.unpack('!B', pkt[0])[0]) & 0x0F, '02x'), int(struct.unpack('!B', pkt[0])[0]) & 0x0F)
         pkt_IP_info["ID"] = (format(int(struct.unpack('!H', pkt[4:6])[0]), '02x'), int(struct.unpack('!H', pkt[4:6])[0]))
         pkt_IP_info["protocol"] = (format(int(struct.unpack('!B', pkt[9:10])[0]),'02x'),int(struct.unpack('!B',pkt[9:10])[0]))
-        pkt_IP_info["sIP"] = (format(int(struct.unpack('!L', pkt[12:16])[0]), '02x'), socket.inet_ntoa(pkt[12:16]))
-        pkt_IP_info["dIP"] = (format(int(struct.unpack('!L', pkt[16:20])[0]), '02x'), socket.inet_ntoa(pkt[16:20]))
+        pkt_IP_info["sIP"] = (format(int(struct.unpack('!L', pkt[12:16])[0]), '02x'), socket.inet_ntoa(pkt[12:16])) # source
+        pkt_IP_info["dIP"] = (format(int(struct.unpack('!L', pkt[16:20])[0]), '02x'), socket.inet_ntoa(pkt[16:20])) # destination
         #print pkt_IP_info["ihl"], pkt_IP_info["ID"],  pkt_IP_info["sIP"],pkt_IP_info["dIP"], pkt_IP_info["protocol"]
         transport_offset = pkt_IP_info["ihl"][1] * 4
         if pkt_IP_info["protocol"][1] == 6 or pkt_IP_info["protocol"][1] == 17:
             pkt_transport_info["src"] = (format(int(struct.unpack('!H', pkt[transport_offset:transport_offset + 2])[0]), '02x'), int(struct.unpack('!H', pkt[transport_offset:transport_offset + 2])[0]))
             pkt_transport_info["dst"] = (format(int(struct.unpack('!H', pkt[transport_offset+2:transport_offset + 4])[0]), '02x'), int(struct.unpack('!H', pkt[transport_offset+2:transport_offset + 4])[0]))
-            if pkt_IP_info["protocol"][1] == 17 and pkt_transport_info["dst"][1] == 53:
+            if pkt_IP_info["protocol"][1] == 17 and pkt_transport_info["dst"][1] == 53: 
                 dns_offset = 32 + transport_offset
                 pkt_transport_info["qdcount"] = (format(int(struct.unpack('!H', pkt[dns_offset+4:dns_offset+6])[0]), '02x'), int(struct.unpack('!H', pkt[dns_offset+4:dns_offset+6])[0]))
                 dns_question_offset = dns_offset + 12 
+                print pkt_transport_info
+                print len(pkt[dns_question_offset:dns_question_offset+2])
                 pkt_transport_info["qname"] = (format(int(struct.unpack('!H', pkt[dns_question_offset:dns_question_offset+2])[0]), '02x'), int(struct.unpack('!H', pkt[dns_question_offset:dns_question_offset+2])[0]))
                 pkt_transport_info["qtype"] = (format(int(struct.unpack('!H', pkt[dns_question_offset+2:dns_question_offset+4])[0]), '02x'), int(struct.unpack('!H', pkt[dns_question_offset+2:dns_question_offset+4])[0]))
                 pkt_transport_info["qclass"] = (format(int(struct.unpack('!H', pkt[dns_question_offset+4:dns_question_offset+6])[0]), '02x'), int(struct.unpack('!H', pkt[dns_question_offset+4:dns_question_offset+6])[0]))
@@ -78,47 +80,61 @@ class Firewall:
         be passed or not
         '''
         pkt_info = self.parse_pkt(pkt)
-        rules_results = self.parse_rules(pkt_dir, pkt_info)
+        rules_results = self.parse_rules(pkt_dir, pkt_IP_info, pkt_transport_info)
         #return rules_results
         return False
 
-    def parse_rules(self, pkt_dir, pkt_info):
+    def parse_rules(self, pkt_dir, pkt_IP_info, pkt_transport_info):
         '''
 
         '''
-        pkt_dst = pkt_info['dst']
-        pkt_src = pkt_info['src']
+        pkt_dst = pkt_IP_info['dst']
+        pkt_src = pkt_IP_info['src']
         pkt_int_cc = self.get_cc(pkt_dst)
         pkt_ext_cc = self.get_cc(pkt_src)
 
         can_send = True
 
         for rule in self.rules:
-            if len(rule) == 4 and pkt_info['p'].lower() in self.protocols: # not dns
+            if len(rule) == 4 and pkt_IP_info['p'].lower() in self.protocols: # not dns
                 verdict, protocol, rules_ext_ip, rules_ext_port = [r.lower() for r in rule.split()]
                 if protocol == 'icmp':
-                    pkt_type = pkt_info['type']
+                    pkt_ext_port = pkt_IP_info['type']
                 else:
+                    pkt_ext_port = pkt_IP_info['protocol']
                     #TODO: same stuff, need to know how implemented
-                if is_valid_ip and is_valid_port:
+                if is_match_ip() and is_match_port():
                     if verdict == 'pass':
                         can_send = True
                     else:
                         can_send = False
-            elif pkt_info['p'] == 'dns': #dns
+            elif pkt_IP_info['protocol'] == 'dns': #dns
+                
 
         return can_send
 
-    def is_valid_port(self, rules_port, pkt_port):
+    def is_match_port(self, rules_port, pkt_port):
         if rules_port == 'any' or rules == pkt_port:
             return True
         elif '-' in rules_port:
-            min_p, max_p = rules_port.split('-')[0:]
+            min_p, max_p = rules_port.split('-')
             min_p = int(min_p)
             max_p = int(max_p)
-            if pkt_port < min_p or pkt_port > max_p:
-                return False
+            return pkt_port >= min_p or pkt_port <= max_p:
         return False
+
+    def is_match_ip(self, rules_ext_ip, pkt_ext_ip):
+        if rules_ext_ip == 'any' or rules_ext_ip == pkt_ext_ip:
+            return True
+        elif len(rules_ext_ip) == 2:
+            pkt_cc = self.get_cc(pkt_ext_ip)
+            return pkt_cc == rules_ext_ip
+        elif '/' in rules_ext_ip:
+            net_add, bits = rules_ext_ip.split('/')
+            net_mask = struct.unpack('!L', socket.inet_aton(net_add))[0] & ((2L << int(bits)-1) -1)
+            return pkt_ext_ip & net_mask == net_mask
+                
+
 
     def get_cc(self, query_ip):
         '''
@@ -139,5 +155,5 @@ class Firewall:
             else:
                 country_code = self.geoIP[mid].split()[2]
                 return country_code
-
+        return None
 
