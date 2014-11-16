@@ -13,8 +13,8 @@ import fnmatch
 class Firewall:
     def __init__(self, config, iface_int, iface_ext):
         self.iface_int = iface_int
-        self.iface_ext = [6, 17, 1]
-
+        self.iface_ext = iface_ext
+        self.valid_protocols = [1, 6, 17]
         # TODO: Load the firewall rules (from rule_filename) here.
         self.rules = []
 
@@ -35,10 +35,6 @@ class Firewall:
     # @pkt: the actual data of the IPv4 packet (including IP header)
     def handle_packet(self, pkt_dir, pkt):
         # TODO: Your main firewall code will be here.
-        ip_info, transport_info = self.parse_pkt(pkt)
-        if ip_info["protocol"][1] == 17 and transport_info["dst"][1] == 53:
-            print transport_info["dst"][1]
-
         if self.packet_valid(pkt_dir, pkt):
             if pkt_dir == PKT_DIR_INCOMING:
                 self.iface_int.send_ip_packet(pkt)
@@ -62,7 +58,7 @@ class Firewall:
                 dns_offset = 8 + transport_offset
 
                 pkt_transport_info["qdcount"] = (format(int(struct.unpack('!H', pkt[dns_offset+4:dns_offset+6])[0]), '02x'), int(struct.unpack('!H', pkt[dns_offset+4:dns_offset+6])[0]))
-                print "qdcount", pkt_transport_info["qdcount"]
+                # print "qdcount", pkt_transport_info["qdcount"]
 
                 dns_question_offset = dns_offset + 12 
                 curr_num = dns_question_offset 
@@ -83,12 +79,12 @@ class Firewall:
                     if int(struct.unpack('!B', pkt[i])[0]) == 0:
                         num_questions += 1
                     i += 1
-                print "qname", pkt_transport_info["qname"]
+                # print "qname", pkt_transport_info["qname"]
                 dns_qtype_offset = i
 
                 pkt_transport_info["qtype"] = (format(int(struct.unpack('!H', pkt[dns_qtype_offset:dns_qtype_offset+2])[0]), '02x'), int(struct.unpack('!H', pkt[dns_qtype_offset:dns_qtype_offset+2])[0]))
-                print "qytpe", pkt_transport_info["qtype"][1]
-                print "qclass", int(struct.unpack('!H',pkt[dns_qtype_offset+2:dns_qtype_offset+4])[0])
+                # print "qytpe", pkt_transport_info["qtype"][1]
+                # print "qclass", int(struct.unpack('!H',pkt[dns_qtype_offset+2:dns_qtype_offset+4])[0])
 
         elif pkt_IP_info["protocol"][1] == 1:
             pkt_transport_info["type"] = (format(int(struct.unpack('!B', pkt[transport_offset:transport_offset + 1])[0]), '02x'), int(struct.unpack('!B', pkt[transport_offset:transport_offset + 1])[0]))
@@ -101,7 +97,7 @@ class Firewall:
         be passed or not
         '''
         pkt_IP_info, pkt_transport_info = self.parse_pkt(pkt)
-        # rules_results = self.parse_rules(pkt_dir, pkt_IP_info, pkt_transport_info)
+        rules_results = self.parse_rules(pkt_dir, pkt_IP_info, pkt_transport_info)
         #return rules_results
         return False
 
@@ -109,22 +105,27 @@ class Firewall:
         '''
 
         '''
-        pkt_dst = pkt_IP_info['dst']
-        pkt_src = pkt_IP_info['src']
-        pkt_int_cc = self.get_cc(pkt_dst)
-        pkt_ext_cc = self.get_cc(pkt_src)
+        if pkt_dir == PKT_DIR_INCOMING:
+            pkt_ext_ip = pkt_IP_info['dIP'][1]
+        else:
+            pkt_ext_ip = pkt_IP_info['sIP'][1]
 
         can_send = True
-
+        print self.get_cc(pkt_ext_ip)
         for rule in self.rules:
-            if len(rule) == 4 and pkt_IP_info['p'].lower() in self.protocols: # not dns
-                verdict, protocol, rules_ext_ip, rules_ext_port = [r.lower() for r in rule.split()]
+            rule = rule.split(' ')
+            if len(rule) == 4 and pkt_IP_info['protocol'][1] in self.valid_protocols: # not dns
+                verdict, protocol, rules_ext_ip, rules_ext_port = [r.lower() for r in rule]
                 if protocol == 'icmp':
-                    pkt_ext_port = pkt_IP_info['type']
+                    if pkt_IP_info['protocol'] == 1: #TODO: constant to go here
+                        pkt_ext_port = pkt_transport_info["type"][1]
+                    else:
+                        continue
                 else:
-                    pkt_ext_port = pkt_IP_info['protocol']
-                    #TODO: same stuff, need to know how implemented
-                if is_match_ip() and is_match_port():
+                    pkt_ext_port = pkt_IP_info['protocol'][1]
+                print 'ipmatch and portmatch: '
+                print self.is_match_ip(rules_ext_ip, pkt_ext_ip), self.is_match_port(rules_ext_port, pkt_ext_port)
+                if self.is_match_ip(rules_ext_ip, pkt_ext_ip) and self.is_match_port(rules_ext_port, pkt_ext_port):
                     if verdict == 'pass':
                         can_send = True
                     else:
@@ -140,7 +141,7 @@ class Firewall:
         return can_send
 
     def is_match_port(self, rules_port, pkt_port):
-        if rules_port == 'any' or rules == pkt_port:
+        if rules_port == 'any' or rules_port == pkt_port:
             return True
         elif '-' in rules_port:
             min_p, max_p = rules_port.split('-')
@@ -156,9 +157,10 @@ class Firewall:
             pkt_cc = self.get_cc(pkt_ext_ip)
             return pkt_cc == rules_ext_ip
         elif '/' in rules_ext_ip:
+            ip = struct.unpack('!L', socket.inet_aton(pkt_ext_ip))[0]
             net_add, bits = rules_ext_ip.split('/')
             net_mask = struct.unpack('!L', socket.inet_aton(net_add))[0] & ((2L << int(bits)-1) -1)
-            return pkt_ext_ip & net_mask == net_mask
+            return ip & net_mask == net_mask
                 
     def get_cc(self, query_ip):
         '''
