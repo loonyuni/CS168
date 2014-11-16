@@ -65,6 +65,8 @@ class Firewall:
 
         return pkt_info
 
+    def parse_rules(self, rule_file):
+        
     def packet_valid(self, pkt_dir, pkt):
         
 # TODO: You may want to add more classes/functions as well.
