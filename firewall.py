@@ -4,6 +4,7 @@ from main import PKT_DIR_INCOMING, PKT_DIR_OUTGOING
 
 import struct # parse binary
 import socket 
+import fnmatch
 
 # TODO: Feel free to import any Python standard moduless as necessary.
 # (http://docs.python.org/2/library/)
@@ -73,7 +74,8 @@ class Firewall:
                         #print int(struct.unpack('!B', pkt[i])[0]),
                         #pkt_transport_info["qname"] = pkt_transport_info["qname"] + '.'
                         curr_num += 1 + int(struct.unpack('!B', pkt[i])[0])
-                        pkt_transport_info["qname"] = pkt_transport_info["qname"] + str(int(struct.unpack('!B', pkt[i])[0]))
+                        if i > 0 and int(struct.unpack('!B', pkt[i])[0]) != 0:
+                            pkt_transport_info["qname"] = pkt_transport_info["qname"] + '.'
                     else:
                         #print chr(int(struct.unpack('!B', pkt[i])[0]))
                         pkt_transport_info["qname"] = pkt_transport_info["qname"] + chr(int(struct.unpack('!B', pkt[i])[0]))
@@ -127,10 +129,14 @@ class Firewall:
                         can_send = True
                     else:
                         can_send = False
-            elif pkt_IP_info['protocol'] == 'dns': #dns
-                #TODO: this
-                pass    
-
+            elif len(rule) == 3:
+                verdict, dns, domain_name = [r.lower() for r in rule.split()] 
+                if pkt_IP_info['protocol'] == 17 and pkt_transport_info["dst"] == 53  and pkt_transport_info["qcount"] == 1 and (pkt_transport_info["qtype"] == 1 or pkt_transport_info["qtype"] == 28) and pkt_transport_info["qclass"] == 1: #dns
+                    if fnmatch.fnmatch(domain_name, pkt_transport_info["qname"]):
+                        if verdict == "pass":
+                            can_send = True
+                    elif verdict == "drop":
+                        can_send = False
         return can_send
 
     def is_match_port(self, rules_port, pkt_port):
@@ -154,8 +160,6 @@ class Firewall:
             net_mask = struct.unpack('!L', socket.inet_aton(net_add))[0] & ((2L << int(bits)-1) -1)
             return pkt_ext_ip & net_mask == net_mask
                 
-
-
     def get_cc(self, query_ip):
         '''
         Because the ip addresses are sorted,
