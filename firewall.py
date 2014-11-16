@@ -37,10 +37,6 @@ class Firewall:
     def handle_packet(self, pkt_dir, pkt):
         # TODO: Your main firewall code will be here.
         ip_info, transport_info = self.parse_pkt(pkt)
-        if ip_info["protocol"][1] == 17 and transport_info["dst"][1] == 53:
-            print transport_info["dst"][1]
-
-
     # TODO: You can add more methods as you want.
     def parse_pkt(self, pkt):
         pkt_IP_info = dict()
@@ -56,16 +52,38 @@ class Firewall:
             pkt_transport_info["src"] = (format(int(struct.unpack('!H', pkt[transport_offset:transport_offset + 2])[0]), '02x'), int(struct.unpack('!H', pkt[transport_offset:transport_offset + 2])[0]))
             pkt_transport_info["dst"] = (format(int(struct.unpack('!H', pkt[transport_offset+2:transport_offset + 4])[0]), '02x'), int(struct.unpack('!H', pkt[transport_offset+2:transport_offset + 4])[0]))
             if pkt_IP_info["protocol"][1] == 17 and pkt_transport_info["dst"][1] == 53:
-                dns_offset = 32 + transport_offset
+                dns_offset = 8 + transport_offset
                 pkt_transport_info["qdcount"] = (format(int(struct.unpack('!H', pkt[dns_offset+4:dns_offset+6])[0]), '02x'), int(struct.unpack('!H', pkt[dns_offset+4:dns_offset+6])[0]))
+                print "qdcount", pkt_transport_info["qdcount"]
+
                 dns_question_offset = dns_offset + 12 
-                pkt_transport_info["qname"] = (format(int(struct.unpack('!H', pkt[dns_question_offset:dns_question_offset+2])[0]), '02x'), int(struct.unpack('!H', pkt[dns_question_offset:dns_question_offset+2])[0]))
-                pkt_transport_info["qtype"] = (format(int(struct.unpack('!H', pkt[dns_question_offset+2:dns_question_offset+4])[0]), '02x'), int(struct.unpack('!H', pkt[dns_question_offset+2:dns_question_offset+4])[0]))
-                pkt_transport_info["qclass"] = (format(int(struct.unpack('!H', pkt[dns_question_offset+4:dns_question_offset+6])[0]), '02x'), int(struct.unpack('!H', pkt[dns_question_offset+4:dns_question_offset+6])[0]))
+
+                curr_num = dns_question_offset 
+                num_questions = 0
+                i = dns_question_offset 
+                pkt_transport_info["qname"] = ""
+                while num_questions < pkt_transport_info["qdcount"][1]:
+                    if i == curr_num:
+                        #print int(struct.unpack('!B', pkt[i])[0]),
+                        #pkt_transport_info["qname"] = pkt_transport_info["qname"] + '.'
+                        curr_num += 1 + int(struct.unpack('!B', pkt[i])[0])
+                        pkt_transport_info["qname"] = pkt_transport_info["qname"] + str(int(struct.unpack('!B', pkt[i])[0]))
+                    else:
+                        #print chr(int(struct.unpack('!B', pkt[i])[0]))
+                        pkt_transport_info["qname"] = pkt_transport_info["qname"] + chr(int(struct.unpack('!B', pkt[i])[0]))
+                        #print pkt_transport_info["qname"]
+                    if int(struct.unpack('!B', pkt[i])[0]) == 0:
+                        num_questions += 1
+                    i += 1
+                print "qname", pkt_transport_info["qname"]
+                dns_qtype_offset = i
+
+                pkt_transport_info["qtype"] = (format(int(struct.unpack('!H', pkt[dns_qtype_offset:dns_qtype_offset+2])[0]), '02x'), int(struct.unpack('!H', pkt[dns_qtype_offset:dns_qtype_offset+2])[0]))
+                print "qytpe", pkt_transport_info["qtype"][1]
+                print "qclass", int(struct.unpack('!H',pkt[dns_qtype_offset+2:dns_qtype_offset+4])[0])
 
         elif pkt_IP_info["protocol"][1] == 1:
             pkt_transport_info["type"] = (format(int(struct.unpack('!B', pkt[transport_offset:transport_offset + 1])[0]), '02x'), int(struct.unpack('!B', pkt[transport_offset:transport_offset + 1])[0]))
-            
         return pkt_IP_info, pkt_transport_info
 
         
