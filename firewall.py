@@ -14,7 +14,7 @@ class Firewall:
         self.iface_int = iface_int
         self.iface_ext = iface_ext
         self.rule_fields = ["verdict", "protocol", "extIP", "ext_port"]
-
+        self.protocols = ['icmp', 'other', 'tcp', 'udp']
 
         # TODO: Load the firewall rules (from rule_filename) here.
         self.rules = []
@@ -36,11 +36,15 @@ class Firewall:
     # @pkt: the actual data of the IPv4 packet (including IP header)
     def handle_packet(self, pkt_dir, pkt):
         # TODO: Your main firewall code will be here.
-        if self.packet_valid(pkt_dir, pkt):
-            ip_info, transport_info = self.parse_pkt(pkt)
-            if ip_info["protocol"][1] == 17 and transport_info["dst"][1] == 53:
-                print transport_info["dst"][1]
+        ip_info, transport_info = self.parse_pkt(pkt)
+        if ip_info["protocol"][1] == 17 and transport_info["dst"][1] == 53:
+            print transport_info["dst"][1]
 
+        if self.packet_valid(pkt_dir, pkt):
+        if pkt_dir == PKT_DIR_INCOMING:
+            self.iface_int.send_ip_packet(pkt)
+        else:
+            self.iface_ext.send_ip_packet(pkt)
     # TODO: You can add more methods as you want.
     def parse_pkt(self, pkt):
         pkt_IP_info = dict()
@@ -74,15 +78,49 @@ class Firewall:
         against parsed rules and returns boolean if packet can
         be passed or not
         '''
-       pkt_info = self.parse_pkt(pkt)
-       
-       print pkt_info
+        pkt_info = self.parse_pkt(pkt)
+        rules_results = self.parse_rules(pkt_dir, pkt_info)
+        return rules_results
 
 
-    def parse_rules():
+    def parse_rules(self, pkt_dir, pkt_info):
         '''
+
         '''
-        pass
+        pkt_dst = pkt_info['dst']
+        pkt_src = pkt_info['src']
+        pkt_int_cc = self.get_cc(pkt_dst)
+        pkt_ext_cc = self.get_cc(pkt_src)
+
+        can_send = True
+
+        for rule in self.rules:
+            if len(rule) == 4 and pkt_info['p'].lower() in self.protocols: # not dns
+                verdict, protocol, rules_ext_ip, rules_ext_port = [r.lower() for r in rule.split()]
+                if protocol == 'icmp':
+                    #TODO: based on how thomas implemented the packet parse, go through and retrieve ports of packet
+                    # then check against valid port
+                else:
+                    #TODO: same stuff, need to know how implemented
+                if is_valid_ip and is_valid_port:
+                    if verdict == 'pass':
+                        can_send = True
+                    else:
+                        can_send = False
+            elif pkt_info['p'] == 'dns': #dns
+
+        return can_send
+
+    def is_valid_port(self, rules_port, pkt_port):
+        if rules_port == 'any' or rules == pkt_port:
+            return True
+        elif '-' in rules_port:
+            min_p, max_p = rules_port.split('-')[0:]
+            min_p = int(min_p)
+            max_p = int(max_p)
+            if pkt_port < min_p or pkt_port > max_p:
+                return False
+        return False
 
     def get_cc(self, query_ip):
         '''
