@@ -96,20 +96,20 @@ class Firewall:
         '''
         pkt_IP_info, pkt_transport_info = self.parse_pkt(pkt)
         rules_results = self.parse_rules(pkt_dir, pkt_IP_info, pkt_transport_info)
-        #return rules_results
-        return False
+        return rules_results
+        #return False
 
     def parse_rules(self, pkt_dir, pkt_IP_info, pkt_transport_info):
         '''
 
         '''
         if pkt_dir == PKT_DIR_INCOMING:
-            pkt_ext_ip = pkt_IP_info['dIP'][1]
-        else:
             pkt_ext_ip = pkt_IP_info['sIP'][1]
+        else:
+            pkt_ext_ip = pkt_IP_info['dIP'][1]
 
         can_send = True
-        print self.get_cc(pkt_ext_ip)
+        # print self.get_cc(pkt_ext_ip)
         for rule in self.rules:
             rule = rule.split(' ')
             if len(rule) == 4 and pkt_IP_info['protocol'][1] in self.valid_protocols: # not dns
@@ -121,17 +121,21 @@ class Firewall:
                         continue
                 else:
                     pkt_ext_port = pkt_IP_info['protocol'][1]
-                print 'ipmatch and portmatch: '
+                # print 'ipmatch and portmatch: '
                 print self.is_match_ip(rules_ext_ip, pkt_ext_ip), self.is_match_port(rules_ext_port, pkt_ext_port)
                 if self.is_match_ip(rules_ext_ip, pkt_ext_ip) and self.is_match_port(rules_ext_port, pkt_ext_port):
                     if verdict == 'pass':
+                        print rule
+                        print "yay"
                         can_send = True
+                        print can_send
+                        print "---"
                     else:
+                        print 'boo', rule
                         can_send = False
             elif pkt_IP_info['protocol'] == 'dns': #dns
                 #TODO: this
                 pass    
-
         return can_send
 
     def is_match_port(self, rules_port, pkt_port):
@@ -151,9 +155,14 @@ class Firewall:
             pkt_cc = self.get_cc(pkt_ext_ip)
             return pkt_cc == rules_ext_ip
         elif '/' in rules_ext_ip:
-            ip = struct.unpack('!L', socket.inet_aton(pkt_ext_ip))[0]
+            #print 'ip_str: ', pkt_ext_ip
+            ip = struct.unpack('<L', socket.inet_aton(pkt_ext_ip))[0]
+            #print 'ip', ip
             net_add, bits = rules_ext_ip.split('/')
-            net_mask = struct.unpack('!L', socket.inet_aton(net_add))[0] & ((2L << int(bits)-1) -1)
+            #print net_add, bits
+            net_mask = struct.unpack('<L', socket.inet_aton(net_add))[0] & ((2L << int(bits)-1)-1)
+            #print 'net_mask: ', net_mask
+            #print ip&net_mask == net_mask
             return ip & net_mask == net_mask
                 
 
