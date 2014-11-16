@@ -31,8 +31,19 @@ class Firewall:
     # @pkt: the actual data of the IPv4 packet (including IP header)
     def handle_packet(self, pkt_dir, pkt):
         # TODO: Your main firewall code will be here.
-        pass
+        
+        if packet_valid(pkt_dir, pkt):
+
+            if pkt_dir == PKT_DIR_INCOMING:
+                self.iface_int.send(pkt)
+            else:
+                self.iface_ext.send(pkt)
 
     # TODO: You can add more methods as you want.
+    def parse_pkt(self, packet):
+        packet_info = dict()
+        # IPv4 
 
+    def packet_valid(self, pkt_dir, pkt):
+        
 # TODO: You may want to add more classes/functions as well.
