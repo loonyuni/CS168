@@ -13,11 +13,13 @@ class Firewall:
     def __init__(self, config, iface_int, iface_ext):
         self.iface_int = iface_int
         self.iface_ext = iface_ext
+        self.rule_fields = ["verdict", "protocol", "extIP", "ext_port"]
+
 
         # TODO: Load the firewall rules (from rule_filename) here.
         self.rules = []
 
-        lines = [line.strip() for line in open(config['rule'])]
+        lines = [line.strip() for line in open(config['rules'])]
         for l in lines:
             if len(l) > 0 and l[0] != '%':
                 self.rules.append(l)
@@ -34,36 +36,37 @@ class Firewall:
     # @pkt: the actual data of the IPv4 packet (including IP header)
     def handle_packet(self, pkt_dir, pkt):
         # TODO: Your main firewall code will be here.
-        
         if self.packet_valid(pkt_dir, pkt):
-
-            if pkt_dir == PKT_DIR_INCOMING:
-                self.iface_int.send(pkt)
-            else:
-                self.iface_ext.send(pkt)
+            ip_info, transport_info = self.parse_pkt(pkt)
+            if ip_info["protocol"][1] == 17 and transport_info["dst"][1] == 53:
+                print transport_info["dst"][1]
 
     # TODO: You can add more methods as you want.
-    def parse_pkt(self, packet):
-        pkt_info = dict()
-        # IPv4 
-        header_valid = struct.unpack('B', packet[0])[0]
-        if (header_valid & 0b11000 == 4) and (header_valid & 0b0111) > 4: # not a valid packet
-             return None
-        fields = struct.unpack('!BBHHHBBHII', packet[:20])
-        pkt_info['v'] = fields[0] & 0b1100
-        pkt_info['hl'] = fields[0] & 0b0111
-        pkt_info['tos'] = fields[1]
-        pkt_info['len'] = fields[2]
-        pkt_info['id'] = fields[3]
-        pkt_info['flags'] = fields[4] >> 13 # right shift operator
-        pkt_info['off'] = fields[4] & 0x1fff
-        pkt_info['ttl'] = fields[5]
-        pkt_info['p'] = fields[6]
-        pkt_info['sum'] = fields[7]
-        pkt_info['src'] = socket.inet_ntoa(fields[8])
-        pkt_info['dst'] = socket.inet_ntoa(fields[9])
+    def parse_pkt(self, pkt):
+        pkt_IP_info = dict()
+        pkt_transport_info = dict()
+        pkt_IP_info["ihl"] = ( format(int(struct.unpack('!B', pkt[0])[0]) & 0x0F, '02x'), int(struct.unpack('!B', pkt[0])[0]) & 0x0F)
+        pkt_IP_info["ID"] = (format(int(struct.unpack('!H', pkt[4:6])[0]), '02x'), int(struct.unpack('!H', pkt[4:6])[0]))
+        pkt_IP_info["protocol"] = (format(int(struct.unpack('!B', pkt[9:10])[0]),'02x'),int(struct.unpack('!B',pkt[9:10])[0]))
+        pkt_IP_info["sIP"] = (format(int(struct.unpack('!L', pkt[12:16])[0]), '02x'), socket.inet_ntoa(pkt[12:16]))
+        pkt_IP_info["dIP"] = (format(int(struct.unpack('!L', pkt[16:20])[0]), '02x'), socket.inet_ntoa(pkt[16:20]))
+        #print pkt_IP_info["ihl"], pkt_IP_info["ID"],  pkt_IP_info["sIP"],pkt_IP_info["dIP"], pkt_IP_info["protocol"]
+        transport_offset = pkt_IP_info["ihl"][1] * 4
+        if pkt_IP_info["protocol"][1] == 6 or pkt_IP_info["protocol"][1] == 17:
+            pkt_transport_info["src"] = (format(int(struct.unpack('!H', pkt[transport_offset:transport_offset + 2])[0]), '02x'), int(struct.unpack('!H', pkt[transport_offset:transport_offset + 2])[0]))
+            pkt_transport_info["dst"] = (format(int(struct.unpack('!H', pkt[transport_offset+2:transport_offset + 4])[0]), '02x'), int(struct.unpack('!H', pkt[transport_offset+2:transport_offset + 4])[0]))
+            if pkt_IP_info["protocol"][1] == 17 and pkt_transport_info["dst"][1] == 53:
+                dns_offset = 32 + transport_offset
+                pkt_transport_info["qdcount"] = (format(int(struct.unpack('!H', pkt[dns_offset+4:dns_offset+6])[0]), '02x'), int(struct.unpack('!H', pkt[dns_offset+4:dns_offset+6])[0]))
+                dns_question_offset = dns_offset + 12 
+                pkt_transport_info["qname"] = (format(int(struct.unpack('!H', pkt[dns_question_offset:dns_question_offset+2])[0]), '02x'), int(struct.unpack('!H', pkt[dns_question_offset:dns_question_offset+2])[0]))
+                pkt_transport_info["qtype"] = (format(int(struct.unpack('!H', pkt[dns_question_offset+2:dns_question_offset+4])[0]), '02x'), int(struct.unpack('!H', pkt[dns_question_offset+2:dns_question_offset+4])[0]))
+                pkt_transport_info["qclass"] = (format(int(struct.unpack('!H', pkt[dns_question_offset+4:dns_question_offset+6])[0]), '02x'), int(struct.unpack('!H', pkt[dns_question_offset+4:dns_question_offset+6])[0]))
 
-        return pkt_info
+        elif pkt_IP_info["protocol"][1] == 1:
+            pkt_transport_info["type"] = (format(int(struct.unpack('!B', pkt[transport_offset:transport_offset + 1])[0]), '02x'), int(struct.unpack('!B', pkt[transport_offset:transport_offset + 1])[0]))
+            
+        return pkt_IP_info, pkt_transport_info
 
     def packet_valid(self, pkt_dir, pkt):
         '''
@@ -79,7 +82,7 @@ class Firewall:
     def parse_rules():
         '''
         '''
-
+        pass
 
     def get_cc(self, query_ip):
         '''
@@ -100,6 +103,5 @@ class Firewall:
             else:
                 country_code = self.geoIP[mid].split()[2]
                 return country_code
-
 
 
