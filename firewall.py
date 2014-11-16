@@ -44,8 +44,6 @@ class Firewall:
 
     # TODO: You can add more methods as you want.
     def parse_pkt(self, packet):
-        print packet
-        print type(packet)
         pkt_info = dict()
         # IPv4 
         header_valid = struct.unpack('B', packet[0])[0]
@@ -68,6 +66,40 @@ class Firewall:
         return pkt_info
 
     def packet_valid(self, pkt_dir, pkt):
+        '''
+        for each packet that comes through, checks validity 
+        against parsed rules and returns boolean if packet can
+        be passed or not
+        '''
        pkt_info = self.parse_pkt(pkt)
+       
        print pkt_info
-# TODO: You may want to add more classes/functions as well.
+
+
+    def parse_rules():
+        '''
+        '''
+
+
+    def get_cc(self, query_ip):
+        '''
+        Because the ip addresses are sorted,
+        we will perform binary search to retrieve
+        the correct 2-byte country code
+        '''
+        q_ip_num = struct.unpack('!L', socket.inet_aton(query_ip))[0]
+        lo, hi = 0, len(self.geoIP)-1
+        while lo < hi:
+            mid = (hi+lo)//2
+            mid_bin_ip = socket.inet_aton(self.geoIP[mid].split()[1])
+            mid_ip = struct.unpack('!L', mid_bin_ip)[0]
+            if q_ip_num > mid_ip:
+                lo = mid+1
+            elif q_ip_num < mid_ip:
+                hi = mid-1
+            else:
+                country_code = self.geoIP[mid].split()[2]
+                return country_code
+
+
+
