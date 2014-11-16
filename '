@@ -70,7 +70,7 @@ class Firewall:
                         #print int(struct.unpack('!B', pkt[i])[0]),
                         #pkt_transport_info["qname"] = pkt_transport_info["qname"] + '.'
                         curr_num += 1 + int(struct.unpack('!B', pkt[i])[0])
-                        if len(pkt_transport_info["qname"]) > 0 and int(struct.unpack('!B', pkt[i])[0]) != 0:
+                        if pkt_transport_info["qname"] != "" and int(struct.unpack('!B', pkt[i])[0]) != 0:
                             pkt_transport_info["qname"] = pkt_transport_info["qname"] + '.'
                     else:
                         #print chr(int(struct.unpack('!B', pkt[i])[0]))
