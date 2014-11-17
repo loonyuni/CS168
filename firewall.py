@@ -40,6 +40,7 @@ class Firewall:
                 self.iface_int.send_ip_packet(pkt)
             else:
                 self.iface_ext.send_ip_packet(pkt)
+
     # TODO: You can add more methods as you want.
     def parse_pkt(self, pkt):
         pkt_IP_info = dict()
@@ -115,7 +116,6 @@ class Firewall:
 
                 if self.is_match_ip(rules_ext_ip, pkt_ext_ip) and self.is_match_port(rules_ext_port, pkt_ext_port):
                     if verdict == 'pass':
-                        print "yay"
                         can_send = True
                     else:
                         can_send = False
@@ -144,9 +144,7 @@ class Firewall:
         if rules_ext_ip == 'any' or rules_ext_ip == pkt_ext_ip:
             return True
         elif len(rules_ext_ip) == 2:
-            print pkt_ext_ip, '**************'
             pkt_cc = self.get_cc(pkt_ext_ip)
-            print pkt_cc, rules_ext_ip
             return pkt_cc == rules_ext_ip
         elif '/' in rules_ext_ip:
             ip = struct.unpack('<L', socket.inet_aton(pkt_ext_ip))[0]
