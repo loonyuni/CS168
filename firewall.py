@@ -113,10 +113,8 @@ class Firewall:
             if len(rule) == 4 and pkt_IP_info['protocol'][1] in self.valid_protocols: # not dns
                 verdict, protocol, rules_ext_ip, rules_ext_port = [r.lower() for r in rule]
                 if protocol == 'icmp':
-                    if pkt_IP_info['protocol'] == 1: #TODO: constant to go here
+                    if pkt_IP_info['protocol'][1] == 1: #TODO: constant to go here
                         pkt_ext_port = pkt_transport_info["type"][1]
-                    else:
-                        continue
                 else:
                     pkt_ext_port = pkt_IP_info['protocol'][1]
 
@@ -135,7 +133,6 @@ class Firewall:
                     
                     if fnmatch.fnmatch(pkt_transport_info["qname"], domain_name):
                         if verdict == "pass":
-                            
                             can_send = True
 
                         elif verdict == "drop":
