@@ -133,14 +133,13 @@ class Firewall:
 
                 if pkt_IP_info['protocol'][1] == 17 and pkt_transport_info["dst"][1] == 53  and pkt_transport_info["qdcount"][1] == 1 and (pkt_transport_info["qtype"][1] == 1 or pkt_transport_info["qtype"][1] == 28) and pkt_transport_info["qclass"][1] == 1: #dns
                     
-                    if fnmatch.fnmatch(domain_name, pkt_transport_info["qname"]):
-                        print "hello"
+                    if fnmatch.fnmatch(pkt_transport_info["qname"], domain_name):
                         if verdict == "pass":
+                            
                             can_send = True
 
                         elif verdict == "drop":
                             can_send = False
-                            print 'boo', rule
         return can_send
 
     def is_match_port(self, rules_port, pkt_port):
