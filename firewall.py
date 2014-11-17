@@ -25,10 +25,10 @@ class Firewall:
 
         # TODO: Load the GeoIP DB ('geoipdb.txt') as well.
         self.geoIP = []
-        ip_lines = [ip_line.strip() for ip_line in open('geoipdb.txt')]
-        for ip_l in ip_lines:
-            if len(ip_l) > 0 and ip_l[0] != '%':
-                self.geoIP.append(ip_l)
+        f = open('geoipdb.txt', 'r')
+        for line in f:
+            if len(line) > 0 and line[0] != '%':
+                self.geoIP.append(line.split(' '))
         # TODO: Also do some initialization if needed.
 
     # @pkt_dir: either PKT_DIR_INCOMING or PKT_DIR_OUTGOING
@@ -168,18 +168,33 @@ class Firewall:
         we will perform binary search to retrieve
         the correct 2-byte country code
         '''
-        q_ip_num = struct.unpack('!L', socket.inet_aton(query_ip))[0]
         lo, hi = 0, len(self.geoIP)-1
         while lo < hi:
-            mid = (hi+lo)//2
-            mid_bin_ip = socket.inet_aton(self.geoIP[mid].split()[1])
-            mid_ip = struct.unpack('!L', mid_bin_ip)[0]
-            if q_ip_num > mid_ip:
-                lo = mid+1
-            elif q_ip_num < mid_ip:
+            mid = (hi+lo)/2
+            if hi-lo == 1:
+                if self.compare_range(query_ip, self.geoIP[hi][0:2]) == 0:
+                    return self.geoIP[hi][2]
+                elif self.compare_range(query_ip, self.geoIP[lo][0:2]) == 0:
+                    return self.geoIP[lo][2]
+
+            if self.compare_range(query_ip, self.geoIP[mid][0:2]) < 0:
                 hi = mid-1
+            elif self.compare_range(query_ip, self.geoIP[mid][0:2]) > 0:
+                lo = mid+1
             else:
-                country_code = self.geoIP[mid].split()[2]
-                return country_code
+                return self.geoIP[mid][2]
         return None
+
+ 
+    def compare_range(self, ip, rng):
+
+        low = int(struct.unpack('!L', socket.inet_aton(rng[0]))[0])
+        high = int(struct.unpack('!L', socket.inet_aton(rng[1]))[0])
+        target = int(struct.unpack('!L', socket.inet_aton(ip))[0])
+        if target < low:
+            return -1
+        elif low < target and target < high:
+            return 0
+        elif target > high:
+            return 1
 
