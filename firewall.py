@@ -83,6 +83,16 @@ class Firewall:
             pkt_transport_info["type"] = (format(int(struct.unpack('!B', pkt[transport_offset:transport_offset + 1])[0]), '02x'), int(struct.unpack('!B', pkt[transport_offset:transport_offset + 1])[0]))
         return pkt_IP_info, pkt_transport_info
 
+    # def packet_valid(self, pkt_dir, pkt):
+    #     '''
+    #     for each packet that comes through, checks validity 
+    #     against parsed rules and returns boolean if packet can
+    #     be passed or not
+    #     '''
+    #     pkt_IP_info, pkt_transport_info = self.parse_pkt(pkt)
+    #     rules_results = self.parse_rules(pkt_dir, pkt_IP_info, pkt_transport_info)
+    #     return rules_results
+
     def packet_valid(self, pkt_dir, pkt):
         '''
         for each packet that comes through, checks validity 
@@ -90,13 +100,6 @@ class Firewall:
         be passed or not
         '''
         pkt_IP_info, pkt_transport_info = self.parse_pkt(pkt)
-        rules_results = self.parse_rules(pkt_dir, pkt_IP_info, pkt_transport_info)
-        return rules_results
-
-    def parse_rules(self, pkt_dir, pkt_IP_info, pkt_transport_info):
-        '''
-
-        '''
         if pkt_dir == PKT_DIR_INCOMING:
             pkt_ext_ip = pkt_IP_info['sIP'][1]
         else:
@@ -121,6 +124,7 @@ class Firewall:
                     if verdict == 'pass':
                         can_send = True
                     else:
+                        print 'noooo', rule
                         can_send = False
 
             elif len(rule) == 3: #dns
@@ -130,10 +134,13 @@ class Firewall:
                 if pkt_IP_info['protocol'][1] == 17 and pkt_transport_info["dst"][1] == 53  and pkt_transport_info["qdcount"][1] == 1 and (pkt_transport_info["qtype"][1] == 1 or pkt_transport_info["qtype"][1] == 28) and pkt_transport_info["qclass"][1] == 1: #dns
                     
                     if fnmatch.fnmatch(domain_name, pkt_transport_info["qname"]):
+                        print "hello"
                         if verdict == "pass":
                             can_send = True
-                    elif verdict == "drop":
-                        can_send = False
+
+                        elif verdict == "drop":
+                            can_send = False
+                            print 'boo', rule
         return can_send
 
     def is_match_port(self, rules_port, pkt_port):
