@@ -49,7 +49,6 @@ class Firewall:
         pkt_IP_info["protocol"] = (format(int(struct.unpack('!B', pkt[9:10])[0]),'02x'),int(struct.unpack('!B',pkt[9:10])[0]))
         pkt_IP_info["sIP"] = (format(int(struct.unpack('!L', pkt[12:16])[0]), '02x'), socket.inet_ntoa(pkt[12:16])) # source
         pkt_IP_info["dIP"] = (format(int(struct.unpack('!L', pkt[16:20])[0]), '02x'), socket.inet_ntoa(pkt[16:20])) # destination
-        #print pkt_IP_info["ihl"], pkt_IP_info["ID"],  pkt_IP_info["sIP"],pkt_IP_info["dIP"], pkt_IP_info["protocol"]
         transport_offset = pkt_IP_info["ihl"][1] * 4
         if pkt_IP_info["protocol"][1] == 6 or pkt_IP_info["protocol"][1] == 17:
             pkt_transport_info["src"] = (format(int(struct.unpack('!H', pkt[transport_offset:transport_offset + 2])[0]), '02x'), int(struct.unpack('!H', pkt[transport_offset:transport_offset + 2])[0]))
@@ -58,7 +57,6 @@ class Firewall:
                 dns_offset = 8 + transport_offset
 
                 pkt_transport_info["qdcount"] = (format(int(struct.unpack('!H', pkt[dns_offset+4:dns_offset+6])[0]), '02x'), int(struct.unpack('!H', pkt[dns_offset+4:dns_offset+6])[0]))
-                # print "qdcount", pkt_transport_info["qdcount"]
 
                 dns_question_offset = dns_offset + 12 
                 curr_num = dns_question_offset 
@@ -67,24 +65,17 @@ class Firewall:
                 pkt_transport_info["qname"] = ""
                 while num_questions < pkt_transport_info["qdcount"][1]:
                     if i == curr_num:
-                        #print int(struct.unpack('!B', pkt[i])[0]),
-                        #pkt_transport_info["qname"] = pkt_transport_info["qname"] + '.'
                         curr_num += 1 + int(struct.unpack('!B', pkt[i])[0])
                         if len(pkt_transport_info["qname"]) > 0 and int(struct.unpack('!B', pkt[i])[0]) != 0:
                             pkt_transport_info["qname"] = pkt_transport_info["qname"] + '.'
                     else:
-                        #print chr(int(struct.unpack('!B', pkt[i])[0]))
                         pkt_transport_info["qname"] = pkt_transport_info["qname"] + chr(int(struct.unpack('!B', pkt[i])[0]))
-                        #print pkt_transport_info["qname"]
                     if int(struct.unpack('!B', pkt[i])[0]) == 0:
                         num_questions += 1
                     i += 1
-                print "qname", pkt_transport_info["qname"]
                 dns_qtype_offset = i
 
                 pkt_transport_info["qtype"] = (format(int(struct.unpack('!H', pkt[dns_qtype_offset:dns_qtype_offset+2])[0]), '02x'), int(struct.unpack('!H', pkt[dns_qtype_offset:dns_qtype_offset+2])[0]))
-                # print "qytpe", pkt_transport_info["qtype"][1]
-                # print "qclass", int(struct.unpack('!H',pkt[dns_qtype_offset+2:dns_qtype_offset+4])[0])
 
         elif pkt_IP_info["protocol"][1] == 1:
             pkt_transport_info["type"] = (format(int(struct.unpack('!B', pkt[transport_offset:transport_offset + 1])[0]), '02x'), int(struct.unpack('!B', pkt[transport_offset:transport_offset + 1])[0]))
@@ -99,7 +90,6 @@ class Firewall:
         pkt_IP_info, pkt_transport_info = self.parse_pkt(pkt)
         rules_results = self.parse_rules(pkt_dir, pkt_IP_info, pkt_transport_info)
         return rules_results
-        #return False
 
     def parse_rules(self, pkt_dir, pkt_IP_info, pkt_transport_info):
         '''
@@ -111,7 +101,6 @@ class Firewall:
             pkt_ext_ip = pkt_IP_info['dIP'][1]
 
         can_send = True
-        # print self.get_cc(pkt_ext_ip)
         for rule in self.rules:
             rule = rule.split(' ')
             if len(rule) == 4 and pkt_IP_info['protocol'][1] in self.valid_protocols: # not dns
@@ -126,13 +115,9 @@ class Firewall:
 
                 if self.is_match_ip(rules_ext_ip, pkt_ext_ip) and self.is_match_port(rules_ext_port, pkt_ext_port):
                     if verdict == 'pass':
-                        print rule
                         print "yay"
                         can_send = True
-                        print can_send
-                        print "---"
                     else:
-                        print 'boo', rule
                         can_send = False
 
             elif len(rule) == 3: #dns
@@ -159,17 +144,14 @@ class Firewall:
         if rules_ext_ip == 'any' or rules_ext_ip == pkt_ext_ip:
             return True
         elif len(rules_ext_ip) == 2:
+            print pkt_ext_ip, '**************'
             pkt_cc = self.get_cc(pkt_ext_ip)
+            print pkt_cc, rules_ext_ip
             return pkt_cc == rules_ext_ip
         elif '/' in rules_ext_ip:
-            #print 'ip_str: ', pkt_ext_ip
             ip = struct.unpack('<L', socket.inet_aton(pkt_ext_ip))[0]
-            #print 'ip', ip
             net_add, bits = rules_ext_ip.split('/')
-            #print net_add, bits
             net_mask = struct.unpack('<L', socket.inet_aton(net_add))[0] & ((2L << int(bits)-1)-1)
-            #print 'net_mask: ', net_mask
-            #print ip&net_mask == net_mask
             return ip & net_mask == net_mask
                 
     def get_cc(self, query_ip):
@@ -192,7 +174,7 @@ class Firewall:
             elif self.compare_range(query_ip, self.geoIP[mid][0:2]) > 0:
                 lo = mid+1
             else:
-                return self.geoIP[mid][2]
+                return self.geoIP[mid][2].lower().strip()
         return None
 
  
