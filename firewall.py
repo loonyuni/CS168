@@ -78,6 +78,7 @@ class Firewall:
 
                 pkt_transport_info["qtype"] = (format(int(struct.unpack('!H', pkt[dns_qtype_offset:dns_qtype_offset+2])[0]), '02x'), int(struct.unpack('!H', pkt[dns_qtype_offset:dns_qtype_offset+2])[0]))
 
+                pkt_transport_info["qclass"] = (format(int(struct.unpack('!H', pkt[dns_qtype_offset+2:dns_qtype_offset+4])[0]),'02x'), int(struct.unpack('!H',pkt[dns_qtype_offset+2:dns_qtype_offset+4])[0]))
         elif pkt_IP_info["protocol"][1] == 1:
             pkt_transport_info["type"] = (format(int(struct.unpack('!B', pkt[transport_offset:transport_offset + 1])[0]), '02x'), int(struct.unpack('!B', pkt[transport_offset:transport_offset + 1])[0]))
         return pkt_IP_info, pkt_transport_info
@@ -124,7 +125,10 @@ class Firewall:
 
             elif len(rule) == 3: #dns
                 verdict, dns, domain_name = [r.lower() for r in rule] 
-                if pkt_IP_info['protocol'] == 17 and pkt_transport_info["dst"] == 53  and pkt_transport_info["qcount"] == 1 and (pkt_transport_info["qtype"] == 1 or pkt_transport_info["qtype"] == 28) and pkt_transport_info["qclass"] == 1: #dns
+               #  print pkt_IP_info['protocol'], pkt_transport_info["dst"], pkt_transport_info["qdcount"],pkt_transport_info["qtype"], pkt_transport_info["qtype"], pkt_transport_info["qclass"] #dns
+
+                if pkt_IP_info['protocol'][1] == 17 and pkt_transport_info["dst"][1] == 53  and pkt_transport_info["qdcount"][1] == 1 and (pkt_transport_info["qtype"][1] == 1 or pkt_transport_info["qtype"][1] == 28) and pkt_transport_info["qclass"][1] == 1: #dns
+                    
                     if fnmatch.fnmatch(domain_name, pkt_transport_info["qname"]):
                         if verdict == "pass":
                             can_send = True
