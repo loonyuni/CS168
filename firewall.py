@@ -185,7 +185,7 @@ class Firewall:
         target = int(struct.unpack('!L', socket.inet_aton(ip))[0])
         if target < low:
             return -1
-        elif low < target and target < high:
+        elif low <= target and target <= high:
             return 0
         elif target > high:
             return 1
