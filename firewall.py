@@ -4,6 +4,7 @@ from main import PKT_DIR_INCOMING, PKT_DIR_OUTGOING
 
 import struct # parse binary
 import socket 
+import fnmatch
 
 # TODO: Feel free to import any Python standard moduless as necessary.
 # (http://docs.python.org/2/library/)
@@ -24,10 +25,10 @@ class Firewall:
 
         # TODO: Load the GeoIP DB ('geoipdb.txt') as well.
         self.geoIP = []
-        ip_lines = [ip_line.strip() for ip_line in open('geoipdb.txt')]
-        for ip_l in ip_lines:
-            if len(ip_l) > 0 and ip_l[0] != '%':
-                self.geoIP.append(ip_l)
+        f = open('geoipdb.txt', 'r')
+        for line in f:
+            if len(line) > 0 and line[0] != '%':
+                self.geoIP.append(line.split(' '))
         # TODO: Also do some initialization if needed.
 
     # @pkt_dir: either PKT_DIR_INCOMING or PKT_DIR_OUTGOING
@@ -69,7 +70,8 @@ class Firewall:
                         #print int(struct.unpack('!B', pkt[i])[0]),
                         #pkt_transport_info["qname"] = pkt_transport_info["qname"] + '.'
                         curr_num += 1 + int(struct.unpack('!B', pkt[i])[0])
-                        pkt_transport_info["qname"] = pkt_transport_info["qname"] + str(int(struct.unpack('!B', pkt[i])[0]))
+                        if len(pkt_transport_info["qname"]) > 0 and int(struct.unpack('!B', pkt[i])[0]) != 0:
+                            pkt_transport_info["qname"] = pkt_transport_info["qname"] + '.'
                     else:
                         #print chr(int(struct.unpack('!B', pkt[i])[0]))
                         pkt_transport_info["qname"] = pkt_transport_info["qname"] + chr(int(struct.unpack('!B', pkt[i])[0]))
@@ -77,7 +79,7 @@ class Firewall:
                     if int(struct.unpack('!B', pkt[i])[0]) == 0:
                         num_questions += 1
                     i += 1
-                # print "qname", pkt_transport_info["qname"]
+                print "qname", pkt_transport_info["qname"]
                 dns_qtype_offset = i
 
                 pkt_transport_info["qtype"] = (format(int(struct.unpack('!H', pkt[dns_qtype_offset:dns_qtype_offset+2])[0]), '02x'), int(struct.unpack('!H', pkt[dns_qtype_offset:dns_qtype_offset+2])[0]))
@@ -121,8 +123,7 @@ class Firewall:
                         continue
                 else:
                     pkt_ext_port = pkt_IP_info['protocol'][1]
-                # print 'ipmatch and portmatch: '
-                print self.is_match_ip(rules_ext_ip, pkt_ext_ip), self.is_match_port(rules_ext_port, pkt_ext_port)
+
                 if self.is_match_ip(rules_ext_ip, pkt_ext_ip) and self.is_match_port(rules_ext_port, pkt_ext_port):
                     if verdict == 'pass':
                         print rule
@@ -133,9 +134,15 @@ class Firewall:
                     else:
                         print 'boo', rule
                         can_send = False
-            elif pkt_IP_info['protocol'] == 'dns': #dns
-                #TODO: this
-                pass    
+
+            elif len(rule) == 3: #dns
+                verdict, dns, domain_name = [r.lower() for r in rule] 
+                if pkt_IP_info['protocol'] == 17 and pkt_transport_info["dst"] == 53  and pkt_transport_info["qcount"] == 1 and (pkt_transport_info["qtype"] == 1 or pkt_transport_info["qtype"] == 28) and pkt_transport_info["qclass"] == 1: #dns
+                    if fnmatch.fnmatch(domain_name, pkt_transport_info["qname"]):
+                        if verdict == "pass":
+                            can_send = True
+                    elif verdict == "drop":
+                        can_send = False
         return can_send
 
     def is_match_port(self, rules_port, pkt_port):
@@ -165,26 +172,39 @@ class Firewall:
             #print ip&net_mask == net_mask
             return ip & net_mask == net_mask
                 
-
-
     def get_cc(self, query_ip):
         '''
         Because the ip addresses are sorted,
         we will perform binary search to retrieve
         the correct 2-byte country code
         '''
-        q_ip_num = struct.unpack('!L', socket.inet_aton(query_ip))[0]
         lo, hi = 0, len(self.geoIP)-1
         while lo < hi:
-            mid = (hi+lo)//2
-            mid_bin_ip = socket.inet_aton(self.geoIP[mid].split()[1])
-            mid_ip = struct.unpack('!L', mid_bin_ip)[0]
-            if q_ip_num > mid_ip:
-                lo = mid+1
-            elif q_ip_num < mid_ip:
+            mid = (hi+lo)/2
+            if hi-lo == 1:
+                if self.compare_range(query_ip, self.geoIP[hi][0:2]) == 0:
+                    return self.geoIP[hi][2]
+                elif self.compare_range(query_ip, self.geoIP[lo][0:2]) == 0:
+                    return self.geoIP[lo][2]
+
+            if self.compare_range(query_ip, self.geoIP[mid][0:2]) < 0:
                 hi = mid-1
+            elif self.compare_range(query_ip, self.geoIP[mid][0:2]) > 0:
+                lo = mid+1
             else:
-                country_code = self.geoIP[mid].split()[2]
-                return country_code
+                return self.geoIP[mid][2]
         return None
+
+ 
+    def compare_range(self, ip, rng):
+
+        low = int(struct.unpack('!L', socket.inet_aton(rng[0]))[0])
+        high = int(struct.unpack('!L', socket.inet_aton(rng[1]))[0])
+        target = int(struct.unpack('!L', socket.inet_aton(ip))[0])
+        if target < low:
+            return -1
+        elif low < target and target < high:
+            return 0
+        elif target > high:
+            return 1
 
