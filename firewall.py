@@ -102,6 +102,8 @@ class Firewall:
             pkt_ext_ip = pkt_IP_info['dIP'][1]
 
         can_send = True
+        if pkt_IP_info['ihl'] < 5:
+            return False
         for rule in self.rules:
             rule = rule.split(' ')
             if len(rule) == 4 and pkt_IP_info['protocol'][1] in self.valid_protocols: # not dns
