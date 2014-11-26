@@ -109,6 +109,7 @@ class Firewall:
         can_send = True
         if pkt_IP_info['ihl'] < 5:
             return False
+        last_rule = []
         for rule in self.rules:
             rule = rule.split(' ')
             if len(rule) == 4 and pkt_IP_info['protocol'][1] in self.valid_protocols: # not dns
@@ -126,7 +127,7 @@ class Firewall:
                     if verdict == 'pass':
                         can_send = True
                     else:
-                        print 'noooo', ' '.join(rule)
+                        last_rule.append(' ' .join(rule))
                         can_send = False
 
             elif len(rule) == 3: #dns
@@ -141,6 +142,7 @@ class Firewall:
 
                         elif verdict == "drop":
                             can_send = False
+        print last_rule
         return can_send
 
     def is_match_port(self, rules_port, pkt_port):
