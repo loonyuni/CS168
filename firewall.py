@@ -40,7 +40,8 @@ class Firewall:
                 self.iface_int.send_ip_packet(pkt)
             else:
                 self.iface_ext.send_ip_packet(pkt)
-
+        else:
+            print "failed"
     # TODO: You can add more methods as you want.
     def parse_pkt(self, pkt):
         pkt_IP_info = dict()
@@ -114,7 +115,10 @@ class Firewall:
                 verdict, protocol, rules_ext_ip, rules_ext_port = [r.lower() for r in rule]
                 if protocol == 'icmp':
                     if pkt_IP_info['protocol'][1] == 1: #TODO: constant to go here
+                        print "received icmp packet"
                         pkt_ext_port = pkt_transport_info["type"][1]
+                    else:
+                        continue # packet is not icmp, rule not relevant
                 else:
                     pkt_ext_port = pkt_IP_info['protocol'][1]
 
@@ -122,7 +126,7 @@ class Firewall:
                     if verdict == 'pass':
                         can_send = True
                     else:
-                        print 'noooo', rule
+                        print 'noooo', ' '.join(rule)
                         can_send = False
 
             elif len(rule) == 3: #dns
