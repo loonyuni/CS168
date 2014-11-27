@@ -36,12 +36,17 @@ class Firewall:
     def handle_packet(self, pkt_dir, pkt):
         # TODO: Your main firewall code will be here.
         if self.packet_valid(pkt_dir, pkt):
+            print "////////////////"
+            print "// PASSED!! :)//"
+            print "////////////////"
             if pkt_dir == PKT_DIR_INCOMING:
                 self.iface_int.send_ip_packet(pkt)
             else:
                 self.iface_ext.send_ip_packet(pkt)
         else:
-            print "failed"
+            print "*****************"
+            print "* DID NOT PASS  *"
+            print "*****************"
     # TODO: You can add more methods as you want.
     def parse_pkt(self, pkt):
         pkt_IP_info = dict()
@@ -84,15 +89,6 @@ class Firewall:
             pkt_transport_info["type"] = (format(int(struct.unpack('!B', pkt[transport_offset:transport_offset + 1])[0]), '02x'), int(struct.unpack('!B', pkt[transport_offset:transport_offset + 1])[0]))
         return pkt_IP_info, pkt_transport_info
 
-    # def packet_valid(self, pkt_dir, pkt):
-    #     '''
-    #     for each packet that comes through, checks validity 
-    #     against parsed rules and returns boolean if packet can
-    #     be passed or not
-    #     '''
-    #     pkt_IP_info, pkt_transport_info = self.parse_pkt(pkt)
-    #     rules_results = self.parse_rules(pkt_dir, pkt_IP_info, pkt_transport_info)
-    #     return rules_results
 
     def packet_valid(self, pkt_dir, pkt):
         '''
@@ -116,19 +112,21 @@ class Firewall:
             if len(rule) == 4 and pkt_IP_info['protocol'][1] in self.valid_protocols.values(): # not dns
                 verdict, protocol, rules_ext_ip, rules_ext_port = [r.lower() for r in rule]
                 if pkt_IP_info['protocol'][1] != self.valid_protocols[protocol]:
-                    print pkt_IP_info['protocol'][1], self.valid_protocols[protocol]
                     continue # if it doesnt match - remove
-                print "matched"
-                print pkt_IP_info['protocol'][1], self.valid_protocols[protocol]
-                
                 if protocol == 'icmp':
                     if pkt_IP_info['protocol'][1] == 1: #will be matching types
-                        pkt_ext_port = pkt_transport_info["type"][1]
-                    else:
-                        continue # packet is not icmp, rule not relevant
-                else:
-                    pkt_ext_port = pkt_transport_info['dst'][1]
+                        pkt_ext_port = str(pkt_transport_info["type"][1])
 
+                else:
+                    if pkt_dir == PKT_DIR_INCOMING:
+                        pkt_ext_port = str(pkt_transport_info['src'][1])
+                    else:
+                        pkt_ext_port = str(pkt_transport_info['dst'][1])
+
+                print "------------------------------------------"
+                print ' '.join(rule), (self.is_match_ip(rules_ext_ip, pkt_ext_ip), self.is_match_port(rules_ext_port, pkt_ext_port))
+                print "rules_port: " + rules_ext_port + " || pkt_port: " + pkt_ext_port
+                print "rules_ip: " + rules_ext_ip + " || pkt_ip" + pkt_ext_port
                 if self.is_match_ip(rules_ext_ip, pkt_ext_ip) and self.is_match_port(rules_ext_port, pkt_ext_port):
                     if verdict == 'pass':
                         last_pass_rule.append(' '.join(rule))
@@ -157,7 +155,6 @@ class Firewall:
         return can_send
 
     def is_match_port(self, rules_port, pkt_port):
-        print pkt_port, rules_port
         if rules_port == 'any' or rules_port == pkt_port:
             return True
         elif '-' in rules_port:
