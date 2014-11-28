@@ -187,9 +187,9 @@ class Firewall:
             mid = (hi+lo)/2
             if hi-lo == 1:
                 if self.compare_range(query_ip, self.geoIP[hi][0:2]) == 0:
-                    return self.geoIP[hi][2]
+                    return self.geoIP[hi][2].lower().strip()
                 elif self.compare_range(query_ip, self.geoIP[lo][0:2]) == 0:
-                    return self.geoIP[lo][2]
+                    return self.geoIP[lo][2].lower().strip()
 
             if self.compare_range(query_ip, self.geoIP[mid][0:2]) < 0:
                 hi = mid-1
