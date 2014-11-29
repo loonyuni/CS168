@@ -35,11 +35,10 @@ class Firewall:
     # @pkt: the actual data of the IPv4 packet (including IP header)
     def handle_packet(self, pkt_dir, pkt):
         # TODO: Your main firewall code will be here.
-        #pkt += "ERROR"
         if self.packet_valid(pkt_dir, pkt):
-            print "////////////////"
+            """print "////////////////"
             print "// PASSED!! :)//"
-            print "////////////////"
+            print "////////////////"""
             if pkt_dir == PKT_DIR_INCOMING:
                 self.iface_int.send_ip_packet(pkt)
             else:
@@ -87,7 +86,7 @@ class Firewall:
         elif pkt_IP_info["protocol"][1] == 1:
             pkt_transport_info["type"] = (format(int(struct.unpack('!B', pkt[transport_offset:transport_offset + 1])[0]), '02x'), int(struct.unpack('!B', pkt[transport_offset:transport_offset + 1])[0]))
       except Exception as e:
-        print "ERROR: " + str(e) 
+        print e
         return None, None
       return pkt_IP_info, pkt_transport_info
     def packet_valid(self, pkt_dir, pkt):
@@ -117,7 +116,6 @@ class Firewall:
                 if protocol == 'icmp':
                     if pkt_IP_info['protocol'][1] == 1: #will be matching types
                         pkt_ext_port = str(pkt_transport_info["type"][1])
-
                 else:
                     if pkt_dir == PKT_DIR_INCOMING:
                         pkt_ext_port = str(pkt_transport_info['src'][1])
@@ -141,6 +139,7 @@ class Firewall:
 
                 if pkt_IP_info['protocol'][1] == 17 and pkt_transport_info["dst"][1] == 53  and pkt_transport_info["qdcount"][1] == 1 and (pkt_transport_info["qtype"][1] == 1 or pkt_transport_info["qtype"][1] == 28) and pkt_transport_info["qclass"][1] == 1: #dns
                     
+                    print "HERE IS THE QUERY:" + pkt_transport_info["qname"]
                     if fnmatch.fnmatch(pkt_transport_info["qname"], domain_name):
                         if verdict == "pass":
                             last_pass_rule.append(' '.join(rule))
@@ -149,10 +148,12 @@ class Firewall:
                         elif verdict == "drop":
                             last_fail_rule.append(' ' .join(rule))
                             can_send = False
+                elif pkt_IP_info['protocol'][1] == 17 and pkt_transport_info["dst"][1] == 53:
+                    can_send = False
       else:
         can_send = False
-      print 'passed: ', last_pass_rule
-      print 'failed: ', last_fail_rule
+      #print 'passed: ', last_pass_rule
+      #print 'failed: ', last_fail_rule
       return can_send
 
     def is_match_port(self, rules_port, pkt_port):
