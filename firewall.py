@@ -79,7 +79,7 @@ class Firewall:
                 pkt_transport_info["qclass"] = (format(int(struct.unpack('!H', pkt[dns_qtype_offset+2:dns_qtype_offset+4])[0]),'02x'), int(struct.unpack('!H',pkt[dns_qtype_offset+2:dns_qtype_offset+4])[0]))
         elif pkt_IP_info["protocol"][1] == 1:
             pkt_transport_info["type"] = (format(int(struct.unpack('!B', pkt[transport_offset:transport_offset + 1])[0]), '02x'), int(struct.unpack('!B', pkt[transport_offset:transport_offset + 1])[0]))
-      except Exception as e:
+      except Exception:
         return None, None
       return pkt_IP_info, pkt_transport_info
 
@@ -101,7 +101,7 @@ class Firewall:
         '''
         pkt_IP_info, pkt_transport_info = self.parse_pkt(pkt)
         if pkt_IP_info == None or pkt_transport_info == None:
-            reeturn false
+            return false
         if pkt_dir == PKT_DIR_INCOMING:
             pkt_ext_ip = pkt_IP_info['sIP'][1]
         else:
@@ -130,6 +130,7 @@ class Firewall:
                     if verdict == 'pass':
                         can_send = True
                     else:
+                        print 'noooo', rule
                         can_send = False
 
             elif len(rule) == 3: #dns
