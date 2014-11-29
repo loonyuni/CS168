@@ -57,7 +57,9 @@ class Firewall:
             pkt_transport_info["dst"] = (format(int(struct.unpack('!H', pkt[transport_offset+2:transport_offset + 4])[0]), '02x'), int(struct.unpack('!H', pkt[transport_offset+2:transport_offset + 4])[0]))
             if pkt_IP_info["protocol"][1] == 17 and pkt_transport_info["dst"][1] == 53:
                 dns_offset = 8 + transport_offset
+
                 pkt_transport_info["qdcount"] = (format(int(struct.unpack('!H', pkt[dns_offset+4:dns_offset+6])[0]), '02x'), int(struct.unpack('!H', pkt[dns_offset+4:dns_offset+6])[0]))
+
                 dns_question_offset = dns_offset + 12 
                 curr_num = dns_question_offset 
                 num_questions = 0
@@ -74,6 +76,7 @@ class Firewall:
                         num_questions += 1
                     i += 1
                 dns_qtype_offset = i
+
                 pkt_transport_info["qtype"] = (format(int(struct.unpack('!H', pkt[dns_qtype_offset:dns_qtype_offset+2])[0]), '02x'), int(struct.unpack('!H', pkt[dns_qtype_offset:dns_qtype_offset+2])[0]))
 
                 pkt_transport_info["qclass"] = (format(int(struct.unpack('!H', pkt[dns_qtype_offset+2:dns_qtype_offset+4])[0]),'02x'), int(struct.unpack('!H',pkt[dns_qtype_offset+2:dns_qtype_offset+4])[0]))
