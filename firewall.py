@@ -14,7 +14,7 @@ class Firewall:
     def __init__(self, config, iface_int, iface_ext):
         self.iface_int = iface_int
         self.iface_ext = iface_ext
-        self.valid_protocols = {'icmp': 1, 'tcp': 6, 'udp': 17}
+        self.valid_protocols = {1:'icmp', 6:'tcp', 17:'udp'}
         # TODO: Load the firewall rules (from rule_filename) here.
         self.rules = []
 
@@ -82,7 +82,7 @@ class Firewall:
                 pkt_transport_info["qclass"] = (format(int(struct.unpack('!H', pkt[dns_qtype_offset+2:dns_qtype_offset+4])[0]),'02x'), int(struct.unpack('!H',pkt[dns_qtype_offset+2:dns_qtype_offset+4])[0]))
         elif pkt_IP_info["protocol"][1] == 1:
             pkt_transport_info["type"] = (format(int(struct.unpack('!B', pkt[transport_offset:transport_offset + 1])[0]), '02x'), int(struct.unpack('!B', pkt[transport_offset:transport_offset + 1])[0]))
-      except Exception:
+      except Exception: 
         return None, None
       return pkt_IP_info, pkt_transport_info
 
@@ -115,9 +115,9 @@ class Firewall:
             return False
         for rule in self.rules:
             rule = rule.split(' ')
-            if len(rule) == 4 and pkt_IP_info['protocol'][1] in self.valid_protocols.values(): # not dns
+            if len(rule) == 4 and pkt_IP_info['protocol'][1] in self.valid_protocols: # not dns
                 verdict, protocol, rules_ext_ip, rules_ext_port = [r.lower() for r in rule]
-                if pkt_IP_info['protocol'][1] != self.valid_protocols[protocol]:
+                if self.valid_protocols[pkt_IP_info['protocol'][1]] != protocol:
                     continue 
                 if protocol == 'icmp':
                     if pkt_IP_info['protocol'][1] == 1: #TODO: constant to go here
