@@ -8,7 +8,7 @@ import fnmatch
 
 # TODO: Feel free to import any Python standard moduless as necessary.
 # (http://docs.python.org/2/library/)
-# You must NOT use any 3rd-party libraries, though.
+# You must NOT use any 3rd-party libraries, though.  
 
 class Firewall:
     def __init__(self, config, iface_int, iface_ext):
@@ -103,8 +103,8 @@ class Firewall:
         be passed or not
         '''
         pkt_IP_info, pkt_transport_info = self.parse_pkt(pkt)
-        if pkt_IP_info == None or pkt_transport_info == None:
-            return false
+        if pkt_IP_info == None:
+            return False
         if pkt_dir == PKT_DIR_INCOMING:
             pkt_ext_ip = pkt_IP_info['sIP'][1]
         else:
@@ -128,7 +128,6 @@ class Firewall:
                     else:
                         pkt_ext_port = str(pkt_transport_info['dst'][1])
 
-                 
                 if self.is_match_ip(rules_ext_ip, pkt_ext_ip) and self.is_match_port(rules_ext_port, pkt_ext_port):
                     if verdict == 'pass':
                         can_send = True
