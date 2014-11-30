@@ -147,8 +147,6 @@ class Firewall:
 
                         elif verdict == "drop":
                             can_send = False
-                elif pkt_IP_info['protocol'][1] == 17 and pkt_transport_info["dst"][1] == 53:
-                    can_send = False
 
         return can_send
 
