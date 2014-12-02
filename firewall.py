@@ -47,15 +47,16 @@ class Firewall:
                 else:
                     self.iface_int.send_ip_packet(rst)
             elif protocol == 'dns':
+                print pkt_transport_info['qtype'][1]
+                if pkt_transport_info['qtype'][1] != 1:
+                    return
                 dns_pkt = self.create_dns_pkt(pkt, pkt_IP_info)
-                print "meow"
-                if pkt_dir == PKT_DIR_INCOMING:
-                    self.iface_ext.send_ip_packet(dns_pkt)
-                else:
-                    self.iface_int.send_ip_packet(dns_pkt)
+                self.iface_int.send_ip_packet(dns_pkt)
+                #self.iface_ext.send_ip_packet(dns_pkt)
         elif verdict == 'log': 
             if protocol == 'http':
-                #log it!
+                if pkt_IP_info['protocol'] == 6 and pkt_transport_info['src'] == 80 or pkt_transport_info['dst'] == 80:
+                    self.log_http(verdict, )
                 pass
         if can_send:
             if pkt_dir == PKT_DIR_INCOMING:
@@ -69,6 +70,7 @@ class Firewall:
         pkt_IP_info = dict()
         pkt_transport_info = dict()
         pkt_IP_info["ihl"] = ( format(int(struct.unpack('!B', pkt[0])[0]) & 0x0F, '02x'), int(struct.unpack('!B', pkt[0])[0]) & 0x0F)
+        pkt_IP_info['total_length'] = struct.unpack('!H', pkt[2:4])[0]
         pkt_IP_info["ID"] = (format(int(struct.unpack('!H', pkt[4:6])[0]), '02x'), int(struct.unpack('!H', pkt[4:6])[0]))
         pkt_IP_info["protocol"] = (format(int(struct.unpack('!B', pkt[9:10])[0]),'02x'),int(struct.unpack('!B',pkt[9:10])[0]))
         pkt_IP_info["sIP"] = (format(int(struct.unpack('!L', pkt[12:16])[0]), '02x'), socket.inet_ntoa(pkt[12:16])) # source
@@ -77,6 +79,18 @@ class Firewall:
         if pkt_IP_info["protocol"][1] == 6 or pkt_IP_info["protocol"][1] == 17:
             pkt_transport_info["src"] = (format(int(struct.unpack('!H', pkt[transport_offset:transport_offset + 2])[0]), '02x'), int(struct.unpack('!H', pkt[transport_offset:transport_offset + 2])[0]))
             pkt_transport_info["dst"] = (format(int(struct.unpack('!H', pkt[transport_offset+2:transport_offset + 4])[0]), '02x'), int(struct.unpack('!H', pkt[transport_offset+2:transport_offset + 4])[0]))
+            
+            if pkt_IP_info['protocol'][1] == 6 and int(pkt_transport_info['src'][1]) == 80 ot int(pkt_transport_info['dst']) == 80:
+                pkt_transport_info['offset_reserved'] = struct.unpack('!B', pkt[transport_off+12])[0]
+                offset = (pkt_transport_info['offset_reserved'] >> 4) *4
+                pkt_transport_info['data_length'] = pkt[transport_offset+offset:pkt_IP_info['total_length']]
+                pkt_transport_info['flags'] = struct.unpack('!B', pkt[transport_offset+13])[0]
+                pkt_transport_info['s'] = 0x02 &  flags == 0x02
+                pkt_transport_info['a'] = 0x10 & flags == 0x10
+                pkt_transport_info['f'] = 0x01 & flags == 0x01
+
+                pkt_transport_info['seqno'] = struct.unpack('!L', pkt[transport_off+4:transport_off+8])[0]
+                pkt_transport_info['ackno'] = struct.unpack('!L', pkt[transport_off+8:transport_off+12])[0]
             if pkt_IP_info["protocol"][1] == 17 and pkt_transport_info["dst"][1] == 53:
                 dns_offset = 8 + transport_offset
 
@@ -129,9 +143,9 @@ class Firewall:
         if pkt_IP_info['ihl'] < 5:
             return False
         for rule in self.rules:
-            rule = rule.split(' ')
+            rule = [r.lower() for r in rule.split(' ')]
             if len(rule) == 4 and pkt_IP_info['protocol'][1] in self.valid_protocols: # not dns
-                verdict, protocol, rules_ext_ip, rules_ext_port = [r.lower() for r in rule]
+                verdict, protocol, rules_ext_ip, rules_ext_port = rule
                 if self.valid_protocols[pkt_IP_info['protocol'][1]] != protocol:
                     continue 
                 if protocol == 'icmp':
@@ -151,8 +165,14 @@ class Firewall:
                     elif verdict == 'drop' or verdict == 'deny':
                         can_send = False
 
-            elif len(rule) == 3: #dns
-                verdict, dns, domain_name = [r.lower() for r in rule] 
+            elif len(rule) == 3 and rule['0'].lower() == 'log':
+                log, http, domain_name = rule
+                if pkt_IP_info['protocol'][1] == 6 and pkt_ext_port == '80':
+                    can_send = self.log_http(rule, domain_name, pkt_dir, pkt_IP_info, pkt_transport_info)
+                    last_verdict, last_protocol = log, http
+            
+            elif len(rule) == 3 and rule['1'].lower() == 'dns': #dns
+                verdict, dns, domain_name = rule
 
                 if pkt_IP_info['protocol'][1] == 17 and pkt_transport_info["dst"][1] == 53  and pkt_transport_info["qdcount"][1] == 1 and (pkt_transport_info["qtype"][1] == 1 or pkt_transport_info["qtype"][1] == 28) and pkt_transport_info["qclass"][1] == 1: #dns
                     
@@ -299,26 +319,26 @@ class Firewall:
 
         # UDP checksum and total length
         udp_length_dec = len(dns_pkt) - transport_off
-
-        #print len(dns_pkt) - dns_off
-
+        print 'udp: ', udp_length_dec
         udp_length = struct.pack('!H', udp_length_dec)
         dns_pkt = dns_pkt[0:transport_off + 4] +  udp_length + dns_pkt[transport_off+6:]
-        two_byte_chunks = [src_IP[0:2], src_IP[2:4], dst_IP[0:2] ,dst_IP[2:4], struct.pack('!B', 0x0) + protocol]
+        two_byte_chunks = [src_IP[0:2], src_IP[2:4], dst_IP[0:2] ,dst_IP[2:4], struct.pack('!B', 0x0) + protocol, udp_length]
         
-        if (len(dns_pkt)-dns_off) % 2 == 1:
+        if (len(dns_pkt)-transport_off) % 2 == 1:
             dns_pkt += struct.pack('!B', 0x0)
 
-        for i in range(dns_off, len(dns_pkt), 2):
+        for i in range(transport_off, len(dns_pkt), 2):
             two_byte_chunks.append(dns_pkt[i:i+2])
 
-        udp_checksum = self.compute_checksum(two_byte_chunks)
+        #udp_checksum = self.compute_checksum(two_byte_chunks)
 
+        udp_checksum = struct.pack('!H', 0x0)
         dns_pkt = dns_pkt[0:transport_off + 6] + udp_checksum + dns_pkt[transport_off + 8:]
         
 
         #IP checksum and total length
         total_length = struct.pack('!H', len(dns_pkt))
+        print 'total: ', len(dns_pkt)
         dns_pkt = dns_pkt[0:2] + total_length + dns_pkt[4:]
 
         two_byte_chunks = [version_ihl + tos, total_length, ID, ipflags_fragoff, ttl + protocol, src_IP[0:2], src_IP[2:4], dst_IP[0:2], dst_IP[2:4]]
@@ -372,3 +392,29 @@ class Firewall:
         rest_bits = checksum & 0x0ffff 
         sum_bits = carry + rest_bits
         return struct.pack('!H', ~sum_bits & 0xffff)
+
+
+    def log_http(self, rule, domain_name, pkt_dir, pkt_IP_info, pkt_transport_info):
+
+        if pkt_dir == PKT_DIR_INCOMING:
+            connection_id = (pkt_IP_info['dIP'], pkt_transport_info['dst'])
+        else:
+            connection_id = (pkt_IP_info['sIP'], pkt_transport_info['src'])
+
+        if pkt_transport_info['s'] and not pkt_transport_info['a'] and not pkt_transport_info['f']:
+            #SYN
+            self.http_connection[connection_id].increase_next_seqno(1)
+        elif not pkt_transport_info['s'] and pkt_transport_info['a'] and pkt_transport_info['f']:
+            #FINACK
+            self.http_connection[connection_id].increase_next_seqno(1)
+        elif not pkt_transport_info['s'] and pkt_transport_info['a'] and not pkt_transport_info['f']:
+            #ACK
+            self.http_connection[connection_id].increase_next_seqno(pkt_transport_info['data_len'])
+class HTTPConnection(object):
+
+    def __init__(self, connection_id):
+        self.connection_id = ''
+        self.incoming_stream = ''
+        self.outgoing_stream = ''
+        self.next_seqno = None
+
