@@ -3,6 +3,7 @@
 from main import PKT_DIR_INCOMING, PKT_DIR_OUTGOING
 
 import struct # parse binary
+import binascii
 import socket 
 import fnmatch
 
@@ -39,10 +40,18 @@ class Firewall:
         if verdict == 'deny':
             if protocol == 'tcp':
                 #send deny tcp (rst)
-                pass
+                pkt_ip_info, pkt_transport_info = self.parse_pkt(pkt)
+                print pkt_transport_info['src']
+                rst = self.create_rst_pkt(pkt, pkt_ip_info, pkt_transport_info)  
+                print binascii.hexlify(rst)
+                if pkt_dir == PKT_DIR_INCOMING:
+                    self.iface_ext.send_ip_packet(rst)
+                else:
+                    self.iface_int.send_ip_packet(rst)
             elif protocol == 'dns':
                 #send deny dns
-                pass elif verdict == 'log': 
+                pass 
+        elif verdict == 'log': 
             if protocol == 'http':
                 #log it!
                 pass
@@ -212,11 +221,57 @@ class Firewall:
             return 0
         elif target > high:
             return 1
-    def create_rst_pkt(self, src, dst, pkt, pkt_IP_info, pkt_transport_info):
-        rst_pkt = pkt[0:pkt_IP_info['ihl'] * 4] 
-         
+    def create_rst_pkt(self, pkt, pkt_IP_info, pkt_transport_info):
+        rst_pkt = ""
+        ### IP HEADER ###
+        version_ihl = struct.pack('!B', (struct.unpack('!B', pkt[0])[0] & 0xf0) | 0x05)
+        tos = pkt[1]
+        total_length = struct.pack('!H', 0x28)
+        ID = struct.pack('!H', 0x0)
+        ipflags_fragoff = struct.pack('!H', 0x0)
+        ttl = struct.pack('!B', 0x40)
+        protocol = pkt[9]
+        src_IP = pkt[16:20] 
+        dst_IP = pkt[12:16]
 
-        pass
-    def compute_checksum(self, header_type):
-        pass
+        two_byte_chunks = [version_ihl + tos, total_length,ID, ipflags_fragoff, ttl + protocol, src_IP[0:2], src_IP[2:4], dst_IP[0:2], dst_IP[2:4]]
+        header_checksum = self.compute_checksum(two_byte_chunks)
 
+        rst_pkt = version_ihl + tos + total_length + ID + ipflags_fragoff + ttl + protocol + header_checksum + src_IP + dst_IP 
+
+        ### TCP HEADER ###
+        transport_off = pkt_IP_info['ihl'][1] * 4
+        src_port =  pkt[transport_off+2:transport_off+4]
+        dst_port = pkt[transport_off:transport_off+2]
+        seq_num = pkt[transport_off+8:transport_off+12]
+        ack_num = struct.pack('!L',struct.unpack('!L',pkt[transport_off+4:transport_off+8])[0] + 1)
+        header_length = struct.pack('!B', 0x50)
+        tcp_flag = struct.pack('!B', 0x14)
+        window = struct.pack('!H', 0)
+        urgent_ptr = struct.pack('!H', 0)
+
+        two_byte_chunks = [src_port ,dst_port, seq_num[0:2], seq_num[2:4], ack_num[0:2],ack_num[2:4], header_length + tcp_flag, window, urgent_ptr]
+        tcp_checksum = self.compute_checksum(two_byte_chunks)
+
+        rst_pkt += src_port + dst_port + seq_num + ack_num + header_length + tcp_flag + window + tcp_checksum + urgent_ptr
+
+        return rst_pkt
+
+
+    def compute_checksum(self, two_byte_list):
+        checksum = 0
+        for two_byte in two_byte_list:
+            checksum += struct.unpack('!H', two_byte)[0]
+        num_bits = len(bin(checksum)) - 2
+        print bin(checksum) 
+        print num_bits
+        bin_checksum = int(bin(checksum),2)
+
+        four_bit_mask = 0b1111 << (num_bits - 4)
+        carry = (four_bit_mask & bin_checksum) >> (num_bits - 4)
+        rest_bits = (bin_checksum << 4) >> 4
+        sum_bits = carry + rest_bits
+        
+        return struct.pack('!H', ~sum_bits & 0xffff)
+
+        
