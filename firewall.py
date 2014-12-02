@@ -238,18 +238,21 @@ class Firewall:
         src_IP = pkt[16:20] 
         dst_IP = pkt[12:16]
 
-        
-
-        dns_pkt = version_ihl + tos + total_length + ID + ipflags_fragoff + ttl + protocol + src_IP + dst_IP 
+        #two_byte_chunks = [version_ihl + tos, total_length, ID, ipflags_fragoff, ttl + protocol, src_IP[0:2], src_IP[2:4], dst_IP[0:2], dst_IP[2:4]]
+        #header_checksum = self.compute_checksum(two_byte_chunks)
+        filler_checksum = struct.pack('!H', 0x0)
+        dns_pkt = version_ihl + tos + total_length + ID + ipflags_fragoff + ttl + protocol + filler_checksum + src_IP + dst_IP 
 
         ### UDP HEADER ###
         transport_off = pkt_IP_info['ihl'][1] * 4
         src_port =  pkt[transport_off+2:transport_off+4]
         dst_port = pkt[transport_off:transport_off+2]
-        #header_length = struct.pack('!H', 0x02)
+        header_length = struct.pack('!H', 0x08)
         
+        two_byte_chunks = [src_IP[0:2], src_IP[2:4], dst_IP[0:2] ,dst_IP[2:4], struct.pack('!B', 0x0) + protocol, src_port, dst_port, header_length]
+        udp_checksum = self.compute_checksum(two_byte_chunks)
 
-        dns_pkt += src_port + dst_port 
+        dns_pkt += src_port + dst_port + header_length + udp_checksum
 
         ### DNS HEADER ###
 
@@ -285,8 +288,8 @@ class Firewall:
 
         dns_ans_offset = dns_qtype_offset + 4
 
-        dns_ntc = dns_pkt[dns_question_off + 12:]
-        dns_pkt += dns_ntc 
+
+        dns_pkt += dns_qname + dns_qtype + dns_qclass
 
         dns_ans_ttl = struct.pack('!L', 0x1)
         dns_ans_RLENGTH = struct.pack('!H', 0x4)
@@ -296,10 +299,19 @@ class Firewall:
 
         # UDP checksum and total length
         udp_length_dec = len(dns_pkt) - transport_off
+
+        #print len(dns_pkt) - dns_off
+
         udp_length = struct.pack('!H', udp_length_dec)
         dns_pkt = dns_pkt[0:transport_off + 4] +  udp_length + dns_pkt[transport_off+6:]
+        two_byte_chunks = [src_IP[0:2], src_IP[2:4], dst_IP[0:2] ,dst_IP[2:4], struct.pack('!B', 0x0) + protocol]
+        
+        if (len(dns_pkt)-dns_off) % 2 == 1:
+            dns_pkt += struct.pack('!B', 0x0)
 
-        two_byte_chunks = [src_IP[0:2], src_IP[2:4], dst_IP[0:2] ,dst_IP[2:4], struct.pack('!B', 0x0) + protocol, src_port, dst_port, udp_length]
+        for i in range(dns_off, len(dns_pkt), 2):
+            two_byte_chunks.append(dns_pkt[i:i+2])
+
         udp_checksum = self.compute_checksum(two_byte_chunks)
 
         dns_pkt = dns_pkt[0:transport_off + 6] + udp_checksum + dns_pkt[transport_off + 8:]
