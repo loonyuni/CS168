@@ -37,22 +37,23 @@ class Firewall:
     def handle_packet(self, pkt_dir, pkt):
         # TODO: Your main firewall code will be here.
         can_send, verdict, protocol = self.packet_valid(pkt_dir, pkt)
+        pkt_IP_info, pkt_transport_info = self.parse_pkt(pkt)
         if verdict == 'deny':
-            pkt_IP_info, pkt_transport_info = self.parse_pkt(pkt)
             if protocol == 'tcp':
                 #send deny tcp (rst)
-                rst = self.create_rst_pkt(pkt, pkt_IP_info, pkt_transport_info)  
+                response = self.create_rst_pkt(pkt, pkt_IP_info, pkt_transport_info)  
                 if pkt_dir == PKT_DIR_INCOMING:
-                    self.iface_ext.send_ip_packet(rst)
+                    self.iface_ext.send_ip_packet(response)
                 else:
-                    self.iface_int.send_ip_packet(rst)
+                    self.iface_int.send_ip_packet(response)
             elif protocol == 'dns':
-                dns_pkt = self.create_dns_pkt(pkt, pkt_IP_info)
-                print "meow"
+                response = self.create_dns_pkt(pkt, pkt_IP_info) 
+                print "kittycat!"
                 if pkt_dir == PKT_DIR_INCOMING:
-                    self.iface_ext.send_ip_packet(dns_pkt)
+                    self.iface_ext.send_ip_packet(response)
                 else:
-                    self.iface_int.send_ip_packet(dns_pkt)
+                    self.iface_int.send_ip_packet(response)
+            
         elif verdict == 'log': 
             if protocol == 'http':
                 #log it!
@@ -164,6 +165,7 @@ class Firewall:
                         elif verdict == 'drop' or verdict == 'deny':
                             can_send = False
 
+        print last_verdict, last_protocol
         return can_send, last_verdict, last_protocol
 
     def is_match_port(self, rules_port, pkt_port):
@@ -230,7 +232,7 @@ class Firewall:
         ### IP HEADER ###
         version_ihl = struct.pack('!B', (struct.unpack('!B', pkt[0])[0] & 0xf0) | 0x05)
         tos = pkt[1]
-        total_length = struct.pack('!H', 0x28)
+        #total_length = struct.pack('!H', 0x28)
         ID = struct.pack('!H', 0x0)
         ipflags_fragoff = struct.pack('!H', 0x0)
         ttl = struct.pack('!B', 0x40)
@@ -239,17 +241,16 @@ class Firewall:
         dst_IP = pkt[12:16]
 
         
-
-        dns_pkt = version_ihl + tos + total_length + ID + ipflags_fragoff + ttl + protocol + src_IP + dst_IP 
+        dns_pkt = version_ihl + tos + ID + ipflags_fragoff + ttl + protocol + src_IP + dst_IP 
 
         ### UDP HEADER ###
         transport_off = pkt_IP_info['ihl'][1] * 4
         src_port =  pkt[transport_off+2:transport_off+4]
         dst_port = pkt[transport_off:transport_off+2]
         #header_length = struct.pack('!H', 0x02)
-        
-
+       
         dns_pkt += src_port + dst_port 
+        #dns_pkt += src_port + dst_port + udp_checksum
 
         ### DNS HEADER ###
 
@@ -260,14 +261,15 @@ class Firewall:
         dns_right_flags = struct.pack('!B', struct.unpack('!B', pkt[dns_off+3])[0] & 0b10000000)
 
         dns_qdcount = pkt[dns_off+4:dns_off+6]
-        dns_anscount = struct.pack( '!H', 0x1)
+        dns_anscount = struct.pack('!H', 0x1)
         dns_nscount = pkt[dns_off+8:dns_off+10]
         dns_arcount = pkt[dns_off+10:dns_off+12]
 
         dns_pkt += dns_ID + dns_left_flags + dns_right_flags + dns_qdcount + dns_anscount + dns_nscount + dns_arcount
 
+
         dns_question_off = dns_off + 12
-        curr_num = dns_question_off 
+        curr_num = dns_question_off
         num_questions = 0
         i = dns_question_off 
         dns_qname = ""
@@ -285,34 +287,39 @@ class Firewall:
 
         dns_ans_offset = dns_qtype_offset + 4
 
-        dns_ntc = dns_pkt[dns_question_off + 12:]
-        dns_pkt += dns_ntc 
+        dns_ntc= dns_pkt[dns_question_off+12:]
+        dns_pkt += dns_ntc
 
+        #dns_ans_name = str(dns_qname)
+        #dns_ans_type = dns_qtype
         dns_ans_ttl = struct.pack('!L', 0x1)
         dns_ans_RLENGTH = struct.pack('!H', 0x4)
         dns_ans_RDATA = socket.inet_aton('54.173.224.150')
 
         dns_pkt += dns_ans_ttl + dns_ans_RLENGTH + dns_ans_RDATA
 
-        # UDP checksum and total length
-        udp_length_dec = len(dns_pkt) - transport_off
-        udp_length = struct.pack('!H', udp_length_dec)
-        dns_pkt = dns_pkt[0:transport_off + 4] +  udp_length + dns_pkt[transport_off+6:]
-
-        two_byte_chunks = [src_IP[0:2], src_IP[2:4], dst_IP[0:2] ,dst_IP[2:4], struct.pack('!B', 0x0) + protocol, src_port, dst_port, udp_length]
-        udp_checksum = self.compute_checksum(two_byte_chunks)
-
-        dns_pkt = dns_pkt[0:transport_off + 6] + udp_checksum + dns_pkt[transport_off + 8:]
         
 
-        #IP checksum and total length
+        # check udp length
+        udp_length = struct.pack('!H', len(dns_pkt) - transport_off)
+        print len(dns_pkt) - transport_off
+        dns_pkt = dns_pkt[0:transport_off + 4] +  udp_length + dns_pkt[transport_off+6:]
+
+        #total _length
         total_length = struct.pack('!H', len(dns_pkt))
         dns_pkt = dns_pkt[0:2] + total_length + dns_pkt[4:]
-
-        two_byte_chunks = [version_ihl + tos, total_length, ID, ipflags_fragoff, ttl + protocol, src_IP[0:2], src_IP[2:4], dst_IP[0:2], dst_IP[2:4]]
-        header_checksum = self.compute_checksum(two_byte_chunks)
+        
+        #ip checksum
+        two_byte_chunks_ip = [version_ihl + tos, total_length, ID, ipflags_fragoff, ttl + protocol, src_IP[0:2], src_IP[2:4], dst_IP[0:2], dst_IP[2:4]]
+        header_checksum = self.compute_checksum(two_byte_chunks_ip)
 
         dns_pkt = dns_pkt[0:10] + header_checksum + dns_pkt[12:]
+
+        #udp checksum
+        two_byte_chunks_dns = [src_IP[0:2], src_IP[2:4], dst_IP[0:2] ,dst_IP[2:4], struct.pack('!B', 0x0) + protocol, src_port, dst_port, udp_length]
+        udp_checksum = self.compute_checksum(two_byte_chunks_dns)
+
+        dns_pkt = dns_pkt[0:transport_off + 6] + udp_checksum + dns_pkt[transport_off + 8:]
 
         return dns_pkt
 
