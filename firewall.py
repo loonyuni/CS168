@@ -249,29 +249,21 @@ class Firewall:
         tcp_flag = struct.pack('!B', 0x14)
         window = struct.pack('!H', 0)
         urgent_ptr = struct.pack('!H', 0)
-
-        two_byte_chunks = [src_port ,dst_port, seq_num[0:2], seq_num[2:4], ack_num[0:2],ack_num[2:4], header_length + tcp_flag, window, urgent_ptr]
+        print "TCP CHUNKS"
+        print "DEST PORT: " + binascii.hexlify(dst_port)
+two_byte_chunks = [src_IP[0:2], src_IP[2:4], dst_IP[0:2] ,dst_IP[2:4], struct.pack('!B', 0x0) + protocol, struct.pack('!H', 0x05), src_port, dst_port, seq_num[0:2], seq_num[2:4], ack_num[0:2], ack_num[2:4], header_length + tcp_flag, window, urgent_ptr]
         tcp_checksum = self.compute_checksum(two_byte_chunks)
 
         rst_pkt += src_port + dst_port + seq_num + ack_num + header_length + tcp_flag + window + tcp_checksum + urgent_ptr
 
         return rst_pkt
-
-
     def compute_checksum(self, two_byte_list):
         checksum = 0
         for two_byte in two_byte_list:
+            print binascii.hexlify(two_byte)
             checksum += struct.unpack('!H', two_byte)[0]
-        num_bits = len(bin(checksum)) - 2
-        print bin(checksum) 
-        print num_bits
-        bin_checksum = int(bin(checksum),2)
-
-        four_bit_mask = 0b1111 << (num_bits - 4)
-        carry = (four_bit_mask & bin_checksum) >> (num_bits - 4)
-        rest_bits = (bin_checksum << 4) >> 4
+        four_bit_mask = 0xf0000
+        carry = (four_bit_mask & checksum) >> 16 
+        rest_bits = checksum & 0x0ffff 
         sum_bits = carry + rest_bits
-        
         return struct.pack('!H', ~sum_bits & 0xffff)
-
-        
