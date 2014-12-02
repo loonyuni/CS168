@@ -41,9 +41,7 @@ class Firewall:
             if protocol == 'tcp':
                 #send deny tcp (rst)
                 pkt_ip_info, pkt_transport_info = self.parse_pkt(pkt)
-                print pkt_transport_info['src']
                 rst = self.create_rst_pkt(pkt, pkt_ip_info, pkt_transport_info)  
-                print binascii.hexlify(rst)
                 if pkt_dir == PKT_DIR_INCOMING:
                     self.iface_ext.send_ip_packet(rst)
                 else:
@@ -221,6 +219,74 @@ class Firewall:
             return 0
         elif target > high:
             return 1
+
+    def create_dns_pkt(self, pkt, pkt_IP_info):
+        dns_pkt = "" 
+        
+        ### IP HEADER ###
+        version_ihl = struct.pack('!B', (struct.unpack('!B', pkt[0])[0] & 0xf0) | 0x05)
+        tos = pkt[1]
+        total_length = struct.pack('!H', 0x28)
+        ID = struct.pack('!H', 0x0)
+        ipflags_fragoff = struct.pack('!H', 0x0)
+        ttl = struct.pack('!B', 0x40)
+        protocol = pkt[9]
+        src_IP = pkt[16:20] 
+        dst_IP = pkt[12:16]
+
+        two_byte_chunks = [version_ihl + tos, total_length,ID, ipflags_fragoff, ttl + protocol, src_IP[0:2], src_IP[2:4], dst_IP[0:2], dst_IP[2:4]]
+        header_checksum = self.compute_checksum(two_byte_chunks)
+
+        dns_pkt = version_ihl + tos + total_length + ID + ipflags_fragoff + ttl + protocol + header_checksum + src_IP + dst_IP 
+
+        ### UDP HEADER ###
+        transport_off = pkt_IP_info['ihl'][1] * 4
+        src_port =  pkt[transport_off+2:transport_off+4]
+        dst_port = pkt[transport_off:transport_off+2]
+        header_length = struct.pack('!H', 0x02)
+        two_byte_chunks = [src_IP[0:2], src_IP[2:4], dst_IP[0:2] ,dst_IP[2:4], struct.pack('!B', 0x0) + protocol, src_port, dst_port, header_length]
+        udp_checksum = self.compute_checksum(two_byte_chunks)
+        dns_pkt += src_port + dst_port + header_length + udp_checksum
+
+        ### DNS HEADER ###
+
+        dns_off = transport_off + 8
+
+        dns_ID = pkt[dns_off:dns_off + 2]
+        dns_left_flags = struct.pack('!B', struct.unpack('!B', pkt[dns_off+2])[0] | 0b10000000)
+        dns_right_flags = struct.pack('!B', struct.unpack('!B', pkt[dns_off+3])[0] & 0b10000000)
+
+        dns_qdcount = pkt[dns_off+4:dns_off+6]
+        dns_anscount = struct.pack( '!H', 0x1)
+        dns_nscount = pkt[dns_off+8:dns_off+10]
+        dns_arcount = pkt[dns_off+10:dns_off+12]
+
+        dns_question_off = dns_off + 12
+        curr_num = dns_question_off 
+        num_questions = 0
+        i = dns_question_off 
+        dns_qname = ""
+        while num_questions < struct.unpack('!H', dns_qdcount)[0]:
+            dns_qname += pkt[i]
+            if int(struct.unpack('!B', pkt[i])[0]) == 0:
+                num_questions += 1
+            i += 1
+        dns_qtype_offset = i
+
+        dns_qtype = pkt[dns_qtype_offset:dns_qtype_offset + 2]
+        dns_qclass = pkt[dns_qtype_offset+2:dns_qtype_offset + 4]
+
+        dns_answer_offset = dns_qtype_offset + 4
+
+        
+        dns_answer_name = str(dns_qname)
+        dns_answer_type 
+        dns_answer_ttl = struct.pack('!L', 0x1)
+        dns_answer_
+
+        return dns_pkt
+
+        
     def create_rst_pkt(self, pkt, pkt_IP_info, pkt_transport_info):
         rst_pkt = ""
         ### IP HEADER ###
@@ -244,23 +310,20 @@ class Firewall:
         src_port =  pkt[transport_off+2:transport_off+4]
         dst_port = pkt[transport_off:transport_off+2]
         seq_num = pkt[transport_off+8:transport_off+12]
+        #ack_num = struct.pack('!L',struct.unpack('!L',pkt[transport_off+4:transport_off+8])[0] + len(pkt) - pkt_IP_info['ihl'][1] -struct.unpack('!B', pkt[12])[0])
         ack_num = struct.pack('!L',struct.unpack('!L',pkt[transport_off+4:transport_off+8])[0] + 1)
         header_length = struct.pack('!B', 0x50)
         tcp_flag = struct.pack('!B', 0x14)
         window = struct.pack('!H', 0)
         urgent_ptr = struct.pack('!H', 0)
-        print "TCP CHUNKS"
-        print "DEST PORT: " + binascii.hexlify(dst_port)
-two_byte_chunks = [src_IP[0:2], src_IP[2:4], dst_IP[0:2] ,dst_IP[2:4], struct.pack('!B', 0x0) + protocol, struct.pack('!H', 0x05), src_port, dst_port, seq_num[0:2], seq_num[2:4], ack_num[0:2], ack_num[2:4], header_length + tcp_flag, window, urgent_ptr]
+        two_byte_chunks = [src_IP[0:2], src_IP[2:4], dst_IP[0:2] ,dst_IP[2:4], struct.pack('!B', 0x0) + protocol, struct.pack('!H', 0x14), src_port, dst_port, seq_num[0:2], seq_num[2:4], ack_num[0:2], ack_num[2:4], header_length + tcp_flag, window, urgent_ptr]
         tcp_checksum = self.compute_checksum(two_byte_chunks)
-
         rst_pkt += src_port + dst_port + seq_num + ack_num + header_length + tcp_flag + window + tcp_checksum + urgent_ptr
 
         return rst_pkt
     def compute_checksum(self, two_byte_list):
         checksum = 0
         for two_byte in two_byte_list:
-            print binascii.hexlify(two_byte)
             checksum += struct.unpack('!H', two_byte)[0]
         four_bit_mask = 0xf0000
         carry = (four_bit_mask & checksum) >> 16 
