@@ -384,7 +384,6 @@ class Firewall:
 
 
     def log_http(self, transaction, log_file):
-        log_file.write(transaction)
         log_file.write('\n')
         log_file.flush()
 
@@ -393,10 +392,17 @@ class Firewall:
         connection_id = (pkt_IP_info['sIP'][1], pkt_IP_info['dIP'][1], pkt_transport_info['src'][1], pkt_transport_info['dst'][1])
 
         if connection_id not in self.http_connections:
-            self.http_connections[connection_id] = HTTPConnection(connection_id)
+            self.http_connections[connection_id] = HTTPConnection(connection_id, pkt_transport_info['seqno'])
         curr_connection = self.http_connections[connection_id]
-        for i in xrange(len(pkt) - (pkt_IP_info['ihl'][1] * 4 + pkt_transport_info['offset'])):
-            print chr(int(struct.unpack('!B',pkt_transport_info['data'][i])[0])),
+
+        print pkt_transport_info['seqno']
+        curr_connection.add_to_stream(pkt_IP_info, pkt_transport_info, pkt, pkt_dir)
+        """if curr_connection.end_of_transaction():
+            self.log_http(curr_connection.get_transaction())
+            curr_connection.clear_streams()"""
+        
+        """for i in xrange(len(pkt) - (pkt_IP_info['ihl'][1] * 4 + pkt_transport_info['offset'])):
+            print chr(int(struct.unpack('!B',pkt_transport_info['data'][i])[0])),"""
 
         """if pkt_transport_info['s'] and not pkt_transport_info['a'] and not pkt_transport_info['f']: #SYN,
 
@@ -414,13 +420,23 @@ class Firewall:
 
 class HTTPConnection(object):
 
-    def __init__(self, connection_id):
+    def __init__(self, connection_id, seqno):
         self.connection_id = connection_id 
         self.incoming_stream = ''
         self.outgoing_stream = ''
-        self.http_transaction_buffer = []
-        self.next_seqno = None
+        self.http_transaction_streams = [{}, {}]
+        self.highest_seen_seqno = seqno 
+
         #The header either is part of an existing transaction, or starts a new transaction.
+    def add_to_stream(self, pkt_IP_info, pkt_transport_info, pkt, http_dir):
+        http_content = str(pkt_transport_info['data'])
 
-
-
+        http_header = http_content.split("\r\n\r\n")[0]
+        print http_header 
+        print len(pkt_transport_info['data'])
+        idx = 1
+        if http_dir == PKT_DIR_INCOMING:
+            idx = 0
+        self.http_transaction_streams[idx][pkt_transport_info['seqno']] = http_header
+        data_length = len(pkt_transport_info['data'])
+        self.highest_seen_seqno += data_length
