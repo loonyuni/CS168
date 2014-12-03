@@ -397,11 +397,17 @@ class Firewall:
         if connection_id not in self.http_connections:
             self.http_connections[connection_id] = HTTPConnection(connection_id)
         curr_connection = self.http_connections[connection_id]
+        print connection_id
+        
         curr_connection.set_seqno(pkt_transport_info['seqno'], pkt_dir)
-        can_send = curr_connection.add_to_stream(pkt_IP_info, pkt_transport_info, pkt, pkt_dir)
-        if curr_connection.end_of_transaction():
+        can_send = curr_connection.add_to_stream(pkt_IP_info, pkt_transport_info, pkt, pkt_dir, domain_name)
+        '''if curr_connection.end_of_transaction():
             curr_connection.assemble_streams()
             curr_connection.log_http(domain_name)
+        '''
+        '''if not pkt_transport_info['s'] and pkt_transport_info['a'] and not pkt_transport_info['f']:
+            curr_connection.add_to_stream(pkt_IP_info, pkt_transport_info, pkt, pkt_dir, domain_name) 
+        '''
         return can_send 
         """for i in xrange(len(pkt) - (pkt_IP_info['ihl'][1] * 4 + pkt_transport_info['offset'])):
             print chr(int(struct.unpack('!B',pkt_transport_info['data'][i])[0])),"""
@@ -425,6 +431,8 @@ class HTTPConnection(object):
         self.connection_id = connection_id 
         self.incoming = ''
         self.outgoing = ''
+        self.headers = ['','']
+        self.has_header = [False, False]
         self.http_transaction_streams = ['','']
         self.seqnos = [1, 1]
 
@@ -439,17 +447,33 @@ class HTTPConnection(object):
             self.seqnos[0] = seqno + 1
             self.in_seqno_inited = True
         elif pkt_dir == PKT_DIR_OUTGOING and not self.out_seqno_inited:
-            print seqno
             self.seqnos[1] = seqno + 1
             self.out_seqno_inited = True
 
-    def add_to_stream(self, pkt_IP_info, pkt_transport_info, pkt, http_dir):
+    def add_to_stream(self, pkt_IP_info, pkt_transport_info, pkt, http_dir, domain_name):
         idx = 1
         if http_dir == PKT_DIR_INCOMING:
             idx = 0
         if pkt_transport_info['seqno'] == self.seqnos[idx]: 
-            print "WHY", self.header_finished[idx]
-            if not self.header_finished[idx]:
+            http_content = str(pkt_transport_info['data'])
+            if not self.has_header[idx]:
+                if (idx == 1 and not self.has_header[0]) or (idx == 0 and self.has_header[1]):
+                    self.http_transaction_streams[idx] += http_content
+
+            self.seqnos[idx] = pkt_transport_info['seqno'] + len(pkt_transport_info['data']) 
+
+            if ('\r\n\r\n' in http_content) and not self.has_header[idx]:
+                if (idx == 0 and self.has_header[1]) or (idx == 1 and not self.has_header[0]):
+                    self.has_header[idx] = True
+            
+            if '\r\n\r\n' in self.http_transaction_streams[0] and '\r\n\r\n' in self.http_transaction_streams[1]:
+                self.incoming = self.http_transaction_streams[0].split('\r\n\r\n')[0]
+                self.outgoing = self.http_transaction_streams[1].split('\r\n\r\n')[0]
+
+                print self.incoming, self.outgoing
+                self.log_http(domain_name)
+
+            '''if not self.header_finished[idx]:
                 http_content = str(pkt_transport_info['data'])
                 if '\r\n\r\n' in http_content:
                     http_content = http_content.split('\r\n\r\n')[0]
@@ -460,13 +484,20 @@ class HTTPConnection(object):
                 
                 print http_content
                 print "AFTER", self.header_finished[idx]
-                self.seqnos[idx] = pkt_transport_info['seqno'] + len(pkt_transport_info['data'])
+            '''
+                            
             return True
         elif pkt_transport_info['seqno'] < self.seqnos[idx]:
+            print pkt_transport_info['seqno'], self.seqnos
+            print "LESS THAN"
             return True
-        return False
+        else:
+            print idx
+            print pkt_transport_info['seqno'],  self.seqnos
+            return False
     def clear_streams(self):
         self.header_finished = [False, False]
+        self.has_header = [False, False]
         self.http_transaction_streams = ['', '']
         self.incoming = ''
         self.outgoing = ''
@@ -487,9 +518,6 @@ class HTTPConnection(object):
         return self.incoming, self.outgoing
 
     def log_http(self, domain_name):
-        """
-        Returns the string to write to log file
-        """
         incoming_stream = self.incoming
         outgoing_stream = self.outgoing
         outgoing_lines = [l.split() for l in outgoing_stream.split('\n')]
@@ -508,7 +536,6 @@ class HTTPConnection(object):
             content_length = '-1'
 
         log_contents = [host_name, method, path, version, status_code, content_length]
-
         if fnmatch.fnmatch(host_name, domain_name):
             f = open('http.log', 'a')
             print "WRITING"
