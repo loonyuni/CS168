@@ -2,7 +2,7 @@
 
 from main import PKT_DIR_INCOMING, PKT_DIR_OUTGOING
 
-from collections import OrderdDict
+from collections import OrderedDict
 import struct # parse binary
 import binascii
 import socket 
@@ -124,7 +124,6 @@ class Firewall:
       return pkt_IP_info, pkt_transport_info
 
 
-
     def packet_valid(self, pkt_dir, pkt):
         '''
         for each packet that comes through, checks validity 
@@ -168,8 +167,12 @@ class Firewall:
 
             elif len(rule) == 3 and rule[0].lower() == 'log':
                 log, http, domain_name = rule
+                if pkt_dir == PKT_DIR_INCOMING:
+                   pkt_ext_port = str(pkt_transport_info['src'][1])
+                else:
+                   pkt_ext_port = str(pkt_transport_info['dst'][1])
                 if pkt_IP_info['protocol'][1] == 6 and pkt_ext_port == '80':
-                    self.handle_http(domain_name, pkt_dir, pkt, pkt_IP_info, pkt_transport_info)
+                    can_send = self.handle_http(domain_name, pkt_dir, pkt, pkt_IP_info, pkt_transport_info) 
             elif len(rule) == 3 and rule[1].lower() == 'dns': #dns
                 verdict, dns, domain_name = rule
 
@@ -384,24 +387,22 @@ class Firewall:
         return struct.pack('!H', ~sum_bits & 0xffff)
 
 
-    def log_http(self, transaction, log_file):
-        log_file.write('\n')
-        log_file.flush()
 
     def handle_http(self, domain_name, pkt_dir, pkt, pkt_IP_info, pkt_transport_info):
-        print "THIS IS AN HTTP PACKET"
-        connection_id = (pkt_IP_info['sIP'][1], pkt_IP_info['dIP'][1], pkt_transport_info['src'][1], pkt_transport_info['dst'][1])
+        if pkt_dir == PKT_DIR_INCOMING:
+            connection_id = (pkt_IP_info['sIP'][1], pkt_transport_info['dst'][1])
+        else:
+            connection_id = (pkt_IP_info['dIP'][1], pkt_transport_info['src'][1])
 
         if connection_id not in self.http_connections:
-            self.http_connections[connection_id] = HTTPConnection(connection_id, pkt_transport_info['seqno'])
+            self.http_connections[connection_id] = HTTPConnection(connection_id)
         curr_connection = self.http_connections[connection_id]
-
-        print pkt_transport_info['seqno']
-        curr_connection.add_to_stream(pkt_IP_info, pkt_transport_info, pkt, pkt_dir)
+        curr_connection.set_seqno(pkt_transport_info['seqno'], pkt_dir)
+        can_send = curr_connection.add_to_stream(pkt_IP_info, pkt_transport_info, pkt, pkt_dir)
         if curr_connection.end_of_transaction():
-            self.log_http(curr_connection.get_transaction())
-            curr_connection.clear_streams()
-        
+            curr_connection.assemble_streams()
+            curr_connection.log_http(domain_name)
+        return can_send 
         """for i in xrange(len(pkt) - (pkt_IP_info['ihl'][1] * 4 + pkt_transport_info['offset'])):
             print chr(int(struct.unpack('!B',pkt_transport_info['data'][i])[0])),"""
 
@@ -416,76 +417,104 @@ class Firewall:
             self.http_connections[connection_id].increase_next_seqno(pkt_transport_info['data_len'])
 
         elif pkt_transport_info['s'] and pkt_transport_info['a'] and not pkt_transport_info['f']:
-            #SYNACK
-            self.http_connections[connection_id].increase_next_seqno(pkt_transport_info['data_len'])"""
+            #SYNACK self.http_connections[connection_id].increase_next_seqno(pkt_transport_info['data_len'])"""
 
 class HTTPConnection(object):
 
-    def __init__(self, connection_id, seqno):
+    def __init__(self, connection_id):
         self.connection_id = connection_id 
         self.incoming = ''
         self.outgoing = ''
-        self.http_transaction_streams = [OrderdDict(), OrderdDict()]
-        self.highest_seen_seqno = seqno 
+        self.http_transaction_streams = ['','']
+        self.seqnos = [1, 1]
+
+        self.header_finished = [False,False]
+        
+        self.in_seqno_inited = False
+        self.out_seqno_inited = False
 
         #The header either is part of an existing transaction, or starts a new transaction.
-    def add_to_stream(self, pkt_IP_info, pkt_transport_info, pkt, http_dir):
-        http_content = str(pkt_transport_info['data'])
+    def set_seqno(self, seqno, pkt_dir):
+        if pkt_dir == PKT_DIR_INCOMING and not self.in_seqno_inited:
+            self.seqnos[0] = seqno + 1
+            self.in_seqno_inited = True
+        elif pkt_dir == PKT_DIR_OUTGOING and not self.out_seqno_inited:
+            print seqno
+            self.seqnos[1] = seqno + 1
+            self.out_seqno_inited = True
 
-        http_header = http_content.split("\r\n\r\n")[0]
-        print http_header 
-        print len(pkt_transport_info['data'])
+    def add_to_stream(self, pkt_IP_info, pkt_transport_info, pkt, http_dir):
         idx = 1
         if http_dir == PKT_DIR_INCOMING:
             idx = 0
-        self.http_transaction_streams[idx][pkt_transport_info['seqno']] = http_header
-        data_length = len(pkt_transport_info['data'])
-        self.highest_seen_seqno += data_length
-
+        if pkt_transport_info['seqno'] == self.seqnos[idx]: 
+            print "WHY", self.header_finished[idx]
+            if not self.header_finished[idx]:
+                http_content = str(pkt_transport_info['data'])
+                if '\r\n\r\n' in http_content:
+                    http_content = http_content.split('\r\n\r\n')[0]
+                    self.header_finished[idx] = True
+                
+                if len(http_content) > 0:
+                    self.http_transaction_streams[idx]+= http_content
+                
+                print http_content
+                print "AFTER", self.header_finished[idx]
+                self.seqnos[idx] = pkt_transport_info['seqno'] + len(pkt_transport_info['data'])
+            return True
+        elif pkt_transport_info['seqno'] < self.seqnos[idx]:
+            return True
+        return False
     def clear_streams(self):
-        self.http_transaction_streams = [OrderdDict(), OrderdDict()]
+        self.header_finished = [False, False]
+        self.http_transaction_streams = ['', '']
+        self.incoming = ''
+        self.outgoing = ''
+        print "CLEARED"
 
     def assemble_streams(self):
-        self.incoming, self.outgoing = '', ''
-        for seqno,segment in self.http_transaction_streams[0].iteritems():
-            self.incoming += segment
-        for seqno, segment in self.http_transaction_streams[1].iteritems():
-            self.outgoing += segment
-
+        self.incoming = ''
+        self.outgoing = ''
+        self.incoming = self.http_transaction_streams[0]
+        self.outgoing = self.http_transaction_streams[1]
+        
     def end_of_transaction(self):
-        self.assemble_streams
-        return re.search("\r\n\r\n", self.incoming) != None and re.search("\r\n\r\n", self.outgoing) != None:
+        if self.header_finished[0] and self.header_finished[1]:
+            print self.http_transaction_streams[0]
+        return self.header_finished[0] and self.header_finished[1]
 
-    def get_transaction(self):
-        self.assemblestreams()
+    def get_transaction(self): 
         return self.incoming, self.outgoing
 
-    def log_http(incoming_stream, outgoing_stream, domain_name):
+    def log_http(self, domain_name):
         """
         Returns the string to write to log file
         """
+        incoming_stream = self.incoming
+        outgoing_stream = self.outgoing
         outgoing_lines = [l.split() for l in outgoing_stream.split('\n')]
+
+
         host_name = re.search(r"Host: (.*)", outgoing_stream, re.IGNORECASE).group(1).strip()
         method = outgoing_lines[0][0].strip()
         path = outgoing_lines[0][1].strip()
         version = outgoing_lines[0][2].strip()
 
-        incoming_lines = [l.split() for l in incoming_stream.split('\n')]
+        incoming_lines = [l.split() for l in incoming_stream.split('\r\n')]
         status_code = incoming_lines[0][1].strip()
         if re.search('content-length', incoming_stream, re.IGNORECASE) != None:
-            content-length = re.search(r"content-length: (\d+)", incoming_streamm, re.IGNORECASE).group(1)
+            content_length = re.search(r"content-length: (\d+)", incoming_stream, re.IGNORECASE).group(1)
         else:
-            content-length = '-1'
+            content_length = '-1'
 
         log_contents = [host_name, method, path, version, status_code, content_length]
 
-
         if fnmatch.fnmatch(host_name, domain_name):
-            f = open('http.log', w)
+            f = open('http.log', 'a')
+            print "WRITING"
             for log in log_contents:
-                f.write(log + '\n')
+                f.write(log + ' ')
+            f.write('\n')
             f.flush()
             f.close()
-        
-
-
+            self.clear_streams()
