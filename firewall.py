@@ -8,6 +8,8 @@ import binascii
 import socket 
 import fnmatch
 import re
+import sys
+import random
 # TODO: Feel free to import any Python standard moduless as necessary.
 # (http://docs.python.org/2/library/)
 # You must NOT use any 3rd-party libraries, though.  
@@ -88,8 +90,10 @@ class Firewall:
                 pkt_transport_info['a'] = ((0x10 & left_mask) == 0x10)
                 pkt_transport_info['f'] = ((0x01 & right_mask) == 0x01)
 
-                pkt_transport_info['seqno'] = struct.unpack('!L', pkt[transport_offset+4:transport_offset+8])[0]
-                pkt_transport_info['ackno'] = struct.unpack('!L', pkt[transport_offset+8:transport_offset+12])[0]
+                pkt_transport_info['seqno'] = struct.unpack('!L', pkt[transport_offset+4:transport_offset+8])[0] 
+                #pkt_transport_info['seqno'] = struct.unpack('!L', pkt[transport_offset+4:transport_offset+8])[0] % (2**32) 
+                #pkt_transport_info['ackno'] = struct.unpack('!L', pkt[transport_offset+8:transport_offset+12])[0] % (2**32) 
+                pkt_transport_info['ackno'] = struct.unpack('!L', pkt[transport_offset+8:transport_offset+12])[0] 
             if pkt_IP_info["protocol"][1] == 17 and pkt_transport_info["dst"][1] == 53:
                 dns_offset = 8 + transport_offset
 
@@ -429,9 +433,8 @@ class HTTPConnection(object):
             if not self.has_header[idx]:
                 if (idx == 1 and not self.has_header[0]) or (idx == 0 and self.has_header[1]):
                     self.http_transaction_streams[idx] += http_content
-                    print self.http_transaction_streams[idx]
 
-            self.seqnos[idx] = pkt_transport_info['seqno'] + len(pkt_transport_info['data']) 
+            self.seqnos[idx] = (pkt_transport_info['seqno'] + len(pkt_transport_info['data']))
 
             if ('\r\n\r\n' in self.http_transaction_streams[idx]) and not self.has_header[idx]:
                 if (idx == 0 and self.has_header[1]) or (idx == 1 and not self.has_header[0]):
@@ -441,7 +444,7 @@ class HTTPConnection(object):
                 self.incoming = self.http_transaction_streams[0].split('\r\n\r\n')[0]
                 self.outgoing = self.http_transaction_streams[1].split('\r\n\r\n')[0]
                 self.log_http(domain_name, http_dir, pkt_IP_info)
-            return True
+            return True 
         elif pkt_transport_info['seqno'] < self.seqnos[idx]:
             return True
         else:
