@@ -2,11 +2,12 @@
 
 from main import PKT_DIR_INCOMING, PKT_DIR_OUTGOING
 
+from collections import OrderdDict
 import struct # parse binary
 import binascii
 import socket 
 import fnmatch
-
+import re
 # TODO: Feel free to import any Python standard moduless as necessary.
 # (http://docs.python.org/2/library/)
 # You must NOT use any 3rd-party libraries, though.  
@@ -397,9 +398,9 @@ class Firewall:
 
         print pkt_transport_info['seqno']
         curr_connection.add_to_stream(pkt_IP_info, pkt_transport_info, pkt, pkt_dir)
-        """if curr_connection.end_of_transaction():
+        if curr_connection.end_of_transaction():
             self.log_http(curr_connection.get_transaction())
-            curr_connection.clear_streams()"""
+            curr_connection.clear_streams()
         
         """for i in xrange(len(pkt) - (pkt_IP_info['ihl'][1] * 4 + pkt_transport_info['offset'])):
             print chr(int(struct.unpack('!B',pkt_transport_info['data'][i])[0])),"""
@@ -422,9 +423,9 @@ class HTTPConnection(object):
 
     def __init__(self, connection_id, seqno):
         self.connection_id = connection_id 
-        self.incoming_stream = ''
-        self.outgoing_stream = ''
-        self.http_transaction_streams = [{}, {}]
+        self.incoming = ''
+        self.outgoing = ''
+        self.http_transaction_streams = [OrderdDict(), OrderdDict()]
         self.highest_seen_seqno = seqno 
 
         #The header either is part of an existing transaction, or starts a new transaction.
@@ -440,3 +441,51 @@ class HTTPConnection(object):
         self.http_transaction_streams[idx][pkt_transport_info['seqno']] = http_header
         data_length = len(pkt_transport_info['data'])
         self.highest_seen_seqno += data_length
+
+    def clear_streams(self):
+        self.http_transaction_streams = [OrderdDict(), OrderdDict()]
+
+    def assemble_streams(self):
+        self.incoming, self.outgoing = '', ''
+        for seqno,segment in self.http_transaction_streams[0].iteritems():
+            self.incoming += segment
+        for seqno, segment in self.http_transaction_streams[1].iteritems():
+            self.outgoing += segment
+
+    def end_of_transaction(self):
+        self.assemble_streams
+        return re.search("\r\n\r\n", self.incoming) != None and re.search("\r\n\r\n", self.outgoing) != None:
+
+    def get_transaction(self):
+        self.assemblestreams()
+        return self.incoming, self.outgoing
+
+    def log_http(incoming_stream, outgoing_stream, domain_name):
+        """
+        Returns the string to write to log file
+        """
+        outgoing_lines = [l.split() for l in outgoing_stream.split('\n')]
+        host_name = re.search(r"Host: (.*)", outgoing_stream, re.IGNORECASE).group(1).strip()
+        method = outgoing_lines[0][0].strip()
+        path = outgoing_lines[0][1].strip()
+        version = outgoing_lines[0][2].strip()
+
+        incoming_lines = [l.split() for l in incoming_stream.split('\n')]
+        status_code = incoming_lines[0][1].strip()
+        if re.search('content-length', incoming_stream, re.IGNORECASE) != None:
+            content-length = re.search(r"content-length: (\d+)", incoming_streamm, re.IGNORECASE).group(1)
+        else:
+            content-length = '-1'
+
+        log_contents = [host_name, method, path, version, status_code, content_length]
+
+
+        if fnmatch.fnmatch(host_name, domain_name):
+            f = open('http.log', w)
+            for log in log_contents:
+                f.write(log + '\n')
+            f.flush()
+            f.close()
+        
+
+
